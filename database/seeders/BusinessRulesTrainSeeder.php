@@ -14,18 +14,32 @@ class BusinessRulesTrainSeeder extends Seeder
         $sqlitePath = env('SQLITE_IMPORT_PATH', 'D:\trains.db');
 
         if (!file_exists($sqlitePath)) {
-            $this->command->error("SQLite database not found at: {$sqlitePath}");
-            $this->command->info('Please set SQLITE_IMPORT_PATH in your .env file or place trains.db in the project root');
+            $this->command->warn("SQLite database not found at: {$sqlitePath}");
+            $this->command->info('Skipping import. Use StationsSeeder and TrainsSeeder for sample data instead.');
             return;
         }
 
-        $sqliteDb = new \SQLite3($sqlitePath);
+        try {
+            $sqliteDb = new \SQLite3($sqlitePath);
 
-        $this->clearUnnecessaryData();
-        $this->importCoreData($sqliteDb);
+            // Test if the database has the expected schema
+            $testQuery = @$sqliteDb->query("SELECT name FROM sqlite_master WHERE type='table' AND name='Station'");
+            if (!$testQuery || !$testQuery->fetchArray()) {
+                $this->command->warn('SQLite database does not have the expected schema (missing Station table)');
+                $this->command->info('Skipping import. Use StationsSeeder and TrainsSeeder for sample data instead.');
+                $sqliteDb->close();
+                return;
+            }
 
-        $sqliteDb->close();
-        $this->command->info('Completed business rules implementation');
+            $this->clearUnnecessaryData();
+            $this->importCoreData($sqliteDb);
+
+            $sqliteDb->close();
+            $this->command->info('Completed business rules implementation');
+        } catch (\Exception $e) {
+            $this->command->error('Error importing from SQLite database: ' . $e->getMessage());
+            $this->command->info('Skipping import. Use StationsSeeder and TrainsSeeder for sample data instead.');
+        }
     }
 
     private function clearUnnecessaryData(): void

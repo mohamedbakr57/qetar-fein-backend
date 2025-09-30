@@ -12,33 +12,49 @@ class TrainDataSeeder extends Seeder
         $sqlitePath = env('SQLITE_IMPORT_PATH', 'D:\trains.db');
 
         if (!file_exists($sqlitePath)) {
-            $this->command->error("SQLite database not found at: {$sqlitePath}");
-            $this->command->info('Please set SQLITE_IMPORT_PATH in your .env file or place trains.db in the project root');
+            $this->command->warn("SQLite database not found at: {$sqlitePath}");
+            $this->command->info('Skipping import. Use StationsSeeder and TrainsSeeder for sample data instead.');
             return;
         }
 
-        if (DB::table('stations')->count() == 0) {
-            $this->importStations($sqlitePath);
-        } else {
-            $this->command->info('Stations already imported, skipping...');
-        }
+        try {
+            // Test if the database has the expected schema
+            $sqliteDb = new \SQLite3($sqlitePath);
+            $testQuery = @$sqliteDb->query("SELECT name FROM sqlite_master WHERE type='table' AND name='Station'");
+            if (!$testQuery || !$testQuery->fetchArray()) {
+                $this->command->warn('SQLite database does not have the expected schema (missing Station table)');
+                $this->command->info('Skipping import. Use StationsSeeder and TrainsSeeder for sample data instead.');
+                $sqliteDb->close();
+                return;
+            }
+            $sqliteDb->close();
 
-        if (DB::table('trains')->count() == 0) {
-            $this->importTrains($sqlitePath);
-        } else {
-            $this->command->info('Trains already imported, skipping...');
-        }
+            if (DB::table('stations')->count() == 0) {
+                $this->importStations($sqlitePath);
+            } else {
+                $this->command->info('Stations already imported, skipping...');
+            }
 
-        if (DB::table('routes')->count() == 0) {
-            $this->importRoutes();
-        } else {
-            $this->command->info('Routes already imported, skipping...');
-        }
+            if (DB::table('trains')->count() == 0) {
+                $this->importTrains($sqlitePath);
+            } else {
+                $this->command->info('Trains already imported, skipping...');
+            }
 
-        if (DB::table('schedules')->count() == 0) {
-            $this->importSchedules();
-        } else {
-            $this->command->info('Schedules already imported, skipping...');
+            if (DB::table('routes')->count() == 0) {
+                $this->importRoutes();
+            } else {
+                $this->command->info('Routes already imported, skipping...');
+            }
+
+            if (DB::table('schedules')->count() == 0) {
+                $this->importSchedules();
+            } else {
+                $this->command->info('Schedules already imported, skipping...');
+            }
+        } catch (\Exception $e) {
+            $this->command->error('Error importing from SQLite database: ' . $e->getMessage());
+            $this->command->info('Skipping import. Use StationsSeeder and TrainsSeeder for sample data instead.');
         }
     }
 

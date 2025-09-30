@@ -18,18 +18,32 @@ StationStopsSeeder extends Seeder
         $sqlitePath = env('SQLITE_IMPORT_PATH', 'D:\trains.db');
 
         if (!file_exists($sqlitePath)) {
-            $this->command->error("SQLite database not found at: {$sqlitePath}");
-            $this->command->info('Please set SQLITE_IMPORT_PATH in your .env file or place trains.db in the project root');
+            $this->command->warn("SQLite database not found at: {$sqlitePath}");
+            $this->command->info('Skipping import. This seeder requires a valid SQLite database.');
             return;
         }
 
-        $sqliteDb = new \SQLite3($sqlitePath);
+        try {
+            $sqliteDb = new \SQLite3($sqlitePath);
 
-        // Import route stations (intermediate stops)
-        $this->importRouteStations($sqliteDb);
+            // Test if the database has the expected schema
+            $testQuery = @$sqliteDb->query("SELECT name FROM sqlite_master WHERE type='table' AND name='Station'");
+            if (!$testQuery || !$testQuery->fetchArray()) {
+                $this->command->warn('SQLite database does not have the expected schema (missing Station table)');
+                $this->command->info('Skipping import. This seeder requires a valid SQLite database.');
+                $sqliteDb->close();
+                return;
+            }
 
-        $sqliteDb->close();
-        $this->command->info('Completed importing station stops');
+            // Import route stations (intermediate stops)
+            $this->importRouteStations($sqliteDb);
+
+            $sqliteDb->close();
+            $this->command->info('Completed importing station stops');
+        } catch (\Exception $e) {
+            $this->command->error('Error importing from SQLite database: ' . $e->getMessage());
+            $this->command->info('Skipping import. This seeder requires a valid SQLite database.');
+        }
     }
 
     private function importRouteStations($sqliteDb): void
