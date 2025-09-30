@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(composer require:*)",
+      "Bash(php artisan filament:install:*)",
+      "Bash(composer:*)",
+      "Bash(php artisan make:filament-user:*)",
+      "Bash(php artisan make:filament-resource:*)",
+      "Bash(php artisan make:filament-page:*)",
+      "Bash(php artisan make:filament-widget:*)",
+      "Bash(php artisan:*)",
+      "Bash(php:*)",
+      "Read(//d//**)",
+      "Bash(sqlite3:*)",
+      "Bash(mysql:*)",
+      "Read(//d/Main/**)",
+      "Read(//c/Users/Moham/Downloads/**)",
+      "Bash(rm:*)",
+      "Bash(find:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

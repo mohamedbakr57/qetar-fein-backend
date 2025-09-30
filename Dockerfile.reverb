@@ -1,0 +1,28 @@
+FROM php:8.3-cli-alpine
+
+# Install dependencies
+RUN apk add --no-cache \
+    mysql-client \
+    redis \
+    curl \
+    && docker-php-ext-install pdo pdo_mysql
+
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Set working directory
+WORKDIR /var/www/html
+
+# Copy and install dependencies
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader
+
+# Copy application
+COPY . .
+RUN composer dump-autoload --optimize --no-dev
+
+# Expose WebSocket port
+EXPOSE 8080
+
+# Run Reverb server
+CMD ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
