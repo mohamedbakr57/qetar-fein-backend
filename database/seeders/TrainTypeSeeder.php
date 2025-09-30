@@ -11,28 +11,42 @@ class TrainTypeSeeder extends Seeder
     {
         $this->command->info('Importing train types from Egyptian railway system...');
 
-        $sqliteDb = new \SQLite3('D:\trains.db');
-        $trainTypes = $sqliteDb->query("SELECT * FROM Train_Type");
-
+        $sqlitePath = env('SQLITE_IMPORT_PATH', 'D:\trains.db');
         $typeData = [];
-        while ($row = $trainTypes->fetchArray(SQLITE3_ASSOC)) {
-            $typeData[] = [
-                'name' => json_encode([
-                    'en' => $row['Train_Type_En'] ?: 'Standard',
-                    'ar' => $row['Train_Type_Ar'] ?: 'عادي'
-                ]),
-                'code' => $this->generateTypeCode($row['Train_Type_En']),
-                'description' => json_encode([
-                    'en' => $this->getTypeDescription($row['Train_Type_En'], 'en'),
-                    'ar' => $this->getTypeDescription($row['Train_Type_En'], 'ar')
-                ]),
-                'features' => json_encode($this->getTypeFeatures($row['Train_Type_En'])),
-                'comfort_level' => $this->getComfortLevel($row['Train_Type_En']),
-                'price_multiplier' => $this->getPriceMultiplier($row['Train_Type_En']),
-                'max_speed' => $this->getMaxSpeed($row['Train_Type_En']),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
+
+        if (file_exists($sqlitePath)) {
+            try {
+                $sqliteDb = new \SQLite3($sqlitePath);
+                $trainTypes = $sqliteDb->query("SELECT * FROM Train_Type");
+
+                while ($row = $trainTypes->fetchArray(SQLITE3_ASSOC)) {
+                    $typeData[] = [
+                        'name' => json_encode([
+                            'en' => $row['Train_Type_En'] ?: 'Standard',
+                            'ar' => $row['Train_Type_Ar'] ?: 'عادي'
+                        ]),
+                        'code' => $this->generateTypeCode($row['Train_Type_En']),
+                        'description' => json_encode([
+                            'en' => $this->getTypeDescription($row['Train_Type_En'], 'en'),
+                            'ar' => $this->getTypeDescription($row['Train_Type_En'], 'ar')
+                        ]),
+                        'features' => json_encode($this->getTypeFeatures($row['Train_Type_En'])),
+                        'comfort_level' => $this->getComfortLevel($row['Train_Type_En']),
+                        'price_multiplier' => $this->getPriceMultiplier($row['Train_Type_En']),
+                        'max_speed' => $this->getMaxSpeed($row['Train_Type_En']),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                }
+
+                $sqliteDb->close();
+                $this->command->info('Imported ' . count($typeData) . ' train types from SQLite database');
+            } catch (\Exception $e) {
+                $this->command->warn('Could not import from SQLite database: ' . $e->getMessage());
+                $this->command->info('Proceeding with Qatar-specific train types only');
+            }
+        } else {
+            $this->command->info('SQLite database not found. Using Qatar-specific train types only');
         }
 
         // Add Qatar-specific train types
