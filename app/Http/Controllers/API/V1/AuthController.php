@@ -25,7 +25,7 @@ class AuthController extends Controller
     public function sendOtp(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'phone' => 'required|string|regex:/^[+]?[0-9]{10,15}$/',
+            'phone' => 'required|string|regex:/^(01[0125][0-9]{8}|(\+2|002)01[0125][0-9]{8})$/',
         ]);
 
         if ($validator->fails()) {
@@ -57,6 +57,7 @@ class AuthController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'OTP sent successfully',
+                'otp' => $result['otp_code'], // Only in debug mode
                 'expires_in' => 300 // 5 minutes
             ]);
         }
@@ -70,7 +71,7 @@ class AuthController extends Controller
     public function verifyOtp(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'phone' => 'required|string|regex:/^[+]?[0-9]{10,15}$/',
+            'phone' => 'required|string|regex:/^(01[0125][0-9]{8}|(\+2|002)01[0125][0-9]{8})$/',
             'otp_code' => 'required|string|size:6',
         ]);
 
