@@ -9,14 +9,22 @@ class TrainDataSeeder extends Seeder
 {
     public function run(): void
     {
+        $sqlitePath = env('SQLITE_IMPORT_PATH', 'D:\trains.db');
+
+        if (!file_exists($sqlitePath)) {
+            $this->command->error("SQLite database not found at: {$sqlitePath}");
+            $this->command->info('Please set SQLITE_IMPORT_PATH in your .env file or place trains.db in the project root');
+            return;
+        }
+
         if (DB::table('stations')->count() == 0) {
-            $this->importStations();
+            $this->importStations($sqlitePath);
         } else {
             $this->command->info('Stations already imported, skipping...');
         }
 
         if (DB::table('trains')->count() == 0) {
-            $this->importTrains();
+            $this->importTrains($sqlitePath);
         } else {
             $this->command->info('Trains already imported, skipping...');
         }
@@ -34,12 +42,12 @@ class TrainDataSeeder extends Seeder
         }
     }
 
-    private function importStations(): void
+    private function importStations(string $sqlitePath): void
     {
         $this->command->info('Importing stations...');
 
         // Get station data from SQLite
-        $sqliteDb = new \SQLite3('D:\trains.db');
+        $sqliteDb = new \SQLite3($sqlitePath);
         $stations = $sqliteDb->query("
             SELECT s.*, sc.Stop_Category_En, sc.Stop_Category_Ar
             FROM Station s
@@ -81,14 +89,15 @@ class TrainDataSeeder extends Seeder
         }
 
         DB::table('stations')->insert($stationData);
+        $sqliteDb->close();
         $this->command->info('Imported ' . count($stationData) . ' stations');
     }
 
-    private function importTrains(): void
+    private function importTrains(string $sqlitePath): void
     {
         $this->command->info('Importing trains...');
 
-        $sqliteDb = new \SQLite3('D:\trains.db');
+        $sqliteDb = new \SQLite3($sqlitePath);
         $trains = $sqliteDb->query("
             SELECT t.*, tt.Train_Type_En, tt.Train_Type_Ar, tn.Train_Note_En, tn.Train_Note_Ar
             FROM Train t
@@ -123,6 +132,7 @@ class TrainDataSeeder extends Seeder
         }
 
         DB::table('trains')->insert($trainData);
+        $sqliteDb->close();
         $this->command->info('Imported ' . count($trainData) . ' trains');
     }
 

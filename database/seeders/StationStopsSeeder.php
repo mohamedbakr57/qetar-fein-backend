@@ -15,11 +15,20 @@ StationStopsSeeder extends Seeder
     {
         $this->command->info('Importing detailed stop information...');
 
-        $sqliteDb = new \SQLite3('D:\trains.db');
+        $sqlitePath = env('SQLITE_IMPORT_PATH', 'D:\trains.db');
+
+        if (!file_exists($sqlitePath)) {
+            $this->command->error("SQLite database not found at: {$sqlitePath}");
+            $this->command->info('Please set SQLITE_IMPORT_PATH in your .env file or place trains.db in the project root');
+            return;
+        }
+
+        $sqliteDb = new \SQLite3($sqlitePath);
 
         // Import route stations (intermediate stops)
         $this->importRouteStations($sqliteDb);
 
+        $sqliteDb->close();
         $this->command->info('Completed importing station stops');
     }
 

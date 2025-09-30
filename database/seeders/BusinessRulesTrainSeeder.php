@@ -11,7 +11,15 @@ class BusinessRulesTrainSeeder extends Seeder
     {
         $this->command->info('Implementing train system according to business rules...');
 
-        $sqliteDb = new \SQLite3('D:\trains.db');
+        $sqlitePath = env('SQLITE_IMPORT_PATH', 'D:\trains.db');
+
+        if (!file_exists($sqlitePath)) {
+            $this->command->error("SQLite database not found at: {$sqlitePath}");
+            $this->command->info('Please set SQLITE_IMPORT_PATH in your .env file or place trains.db in the project root');
+            return;
+        }
+
+        $sqliteDb = new \SQLite3($sqlitePath);
 
         $this->clearUnnecessaryData();
         $this->importCoreData($sqliteDb);
@@ -25,18 +33,24 @@ class BusinessRulesTrainSeeder extends Seeder
         $this->command->info('Clearing existing train and station data for business rules import...');
         $this->command->info('Preserving assignments and communities features...');
 
-        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        $driver = DB::getDriverName();
+
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        }
 
         // Clear business rules tables for proper import
-        DB::table('no_stops')->truncate();
-        DB::table('stops')->truncate();
-        DB::table('trains')->truncate();
-        DB::table('stations')->truncate();
+        DB::table('no_stops')->delete();
+        DB::table('stops')->delete();
+        DB::table('trains')->delete();
+        DB::table('stations')->delete();
 
         // DO NOT TOUCH: assignments, communities, users, and related tables
         // These remain intact as separate features
 
-        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        }
     }
 
     private function importCoreData($sqliteDb): void
