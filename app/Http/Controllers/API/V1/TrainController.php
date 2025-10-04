@@ -7,15 +7,17 @@ use App\Models\Train\Train;
 use App\Models\Train\Station;
 use App\Models\Train\TrainTrip;
 use App\Models\Train\Stop;
+use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Carbon\Carbon;
 
 class TrainController extends Controller
 {
+    use ApiResponse;
     public function index(Request $request): JsonResponse
     {
-        $query = Train::with(['operator']);
+        $query = Train::query();
 
         // Filter by type
         if ($request->has('type')) {
@@ -39,18 +41,15 @@ class TrainController extends Controller
 
         $trains = $query->orderBy('number')->paginate(20);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'trains' => $trains->items(),
-                'pagination' => [
-                    'current_page' => $trains->currentPage(),
-                    'last_page' => $trains->lastPage(),
-                    'per_page' => $trains->perPage(),
-                    'total' => $trains->total(),
-                ]
+        return $this->apiResponse([
+            'trains' => $trains->items(),
+            'pagination' => [
+                'current_page' => $trains->currentPage(),
+                'last_page' => $trains->lastPage(),
+                'per_page' => $trains->perPage(),
+                'total' => $trains->total(),
             ]
-        ]);
+        ], 'success', 200);
     }
 
     public function show(int $id): JsonResponse
@@ -58,10 +57,7 @@ class TrainController extends Controller
         $train = Train::with(['stops.station'])->find($id);
 
         if (!$train) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Train not found'
-            ], 404);
+            return $this->errorResponse('Train not found', 404);
         }
 
         // Format journey information
@@ -86,13 +82,10 @@ class TrainController extends Controller
             ];
         }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'train' => $train,
-                'journey' => $journey
-            ]
-        ]);
+        return $this->apiResponse([
+            'train' => $train,
+            'journey' => $journey
+        ], 'success', 200);
     }
 
     public function schedule(int $id, Request $request): JsonResponse
@@ -100,10 +93,7 @@ class TrainController extends Controller
         $train = Train::with(['stops.station'])->find($id);
 
         if (!$train) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Train not found'
-            ], 404);
+            return $this->errorResponse('Train not found', 404);
         }
 
         // Format complete journey schedule
@@ -121,24 +111,21 @@ class TrainController extends Controller
             ];
         });
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'train' => [
-                    'id' => $train->id,
-                    'number' => $train->number,
-                    'name' => $train->name,
-                    'type' => $train->type,
-                    'status' => $train->status
-                ],
-                'schedule' => $schedule,
-                'journey_summary' => [
-                    'total_stops' => $schedule->count(),
-                    'major_stops' => $schedule->where('is_major_stop', true)->count(),
-                    'estimated_duration' => $this->calculateJourneyDuration($schedule)
-                ]
+        return $this->apiResponse([
+            'train' => [
+                'id' => $train->id,
+                'number' => $train->number,
+                'name' => $train->name,
+                'type' => $train->type,
+                'status' => $train->status
+            ],
+            'schedule' => $schedule,
+            'journey_summary' => [
+                'total_stops' => $schedule->count(),
+                'major_stops' => $schedule->where('is_major_stop', true)->count(),
+                'estimated_duration' => $this->calculateJourneyDuration($schedule)
             ]
-        ]);
+        ], 'success', 200);
     }
 
     public function location(int $id, Request $request): JsonResponse
@@ -146,10 +133,7 @@ class TrainController extends Controller
         $train = Train::find($id);
 
         if (!$train) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Train not found'
-            ], 404);
+            return $this->errorResponse('Train not found', 404);
         }
 
         $date = $request->get('date', Carbon::today()->format('Y-m-d'));
@@ -161,14 +145,10 @@ class TrainController extends Controller
             ->first();
 
         if (!$trip) {
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'train' => $train,
-                    'location' => null,
-                    'message' => 'No active trip found for this date'
-                ]
-            ]);
+            return $this->apiResponse([
+                'train' => $train,
+                'location' => null
+            ], 'No active trip found for this date', 200);
         }
 
         // Get latest location if available
@@ -192,41 +172,38 @@ class TrainController extends Controller
         // Get train with stops
         $train = Train::with(['stops.station'])->find($id);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'train' => [
-                    'id' => $train->id,
-                    'number' => $train->number,
-                    'name' => $train->name,
-                    'type' => $train->type
-                ],
-                'trip' => [
-                    'id' => $trip->id,
-                    'trip_date' => $trip->trip_date,
-                    'status' => $trip->status,
-                    'actual_departure_time' => $trip->actual_departure_time,
-                    'estimated_arrival_time' => $trip->estimated_arrival_time,
-                    'delay_minutes' => $trip->delay_minutes,
-                    'passenger_count' => $trip->passenger_count,
-                ],
-                'location' => $location,
-                'current_station' => $currentStation ? [
-                    'id' => $currentStation->id,
-                    'name' => $this->getStationName($currentStation),
-                    'code' => $currentStation->code
-                ] : null,
-                'journey' => $train->stops->map(function($stop) {
-                    return [
-                        'stop_number' => $stop->stop_number,
-                        'station_name' => $this->getStationName($stop->station),
-                        'arrival_time' => $stop->arrival_time,
-                        'departure_time' => $stop->departure_time,
-                        'is_major_stop' => $stop->is_major_stop
-                    ];
-                })
-            ]
-        ]);
+        return $this->apiResponse([
+            'train' => [
+                'id' => $train->id,
+                'number' => $train->number,
+                'name' => $train->name,
+                'type' => $train->type
+            ],
+            'trip' => [
+                'id' => $trip->id,
+                'trip_date' => $trip->trip_date,
+                'status' => $trip->status,
+                'actual_departure_time' => $trip->actual_departure_time,
+                'estimated_arrival_time' => $trip->estimated_arrival_time,
+                'delay_minutes' => $trip->delay_minutes,
+                'passenger_count' => $trip->passenger_count,
+            ],
+            'location' => $location,
+            'current_station' => $currentStation ? [
+                'id' => $currentStation->id,
+                'name' => $this->getStationName($currentStation),
+                'code' => $currentStation->code
+            ] : null,
+            'journey' => $train->stops->map(function($stop) {
+                return [
+                    'stop_number' => $stop->stop_number,
+                    'station_name' => $this->getStationName($stop->station),
+                    'arrival_time' => $stop->arrival_time,
+                    'departure_time' => $stop->departure_time,
+                    'is_major_stop' => $stop->is_major_stop
+                ];
+            })
+        ], 'success', 200);
     }
 
     public function liveTrains(Request $request): JsonResponse
@@ -270,14 +247,11 @@ class TrainController extends Controller
             ];
         });
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'live_trains' => $liveTrains,
-                'count' => $liveTrains->count(),
-                'last_updated' => now()
-            ]
-        ]);
+        return $this->apiResponse([
+            'live_trains' => $liveTrains,
+            'count' => $liveTrains->count(),
+            'last_updated' => now()
+        ], 'success', 200);
     }
 
     /**

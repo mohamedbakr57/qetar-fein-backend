@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\OtpVerification;
 use App\Models\SocialLogin;
 use App\Services\OtpService;
+use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
@@ -15,6 +16,7 @@ use Laravel\Sanctum\HasApiTokens;
 
 class AuthController extends Controller
 {
+    use ApiResponse;
     protected $otpService;
 
     public function __construct(OtpService $otpService)
@@ -24,95 +26,59 @@ class AuthController extends Controller
 
     public function sendOtp(Request $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'phone' => 'required|string|regex:/^(01[0125][0-9]{8}|(\+2|002)01[0125][0-9]{8})$/',
+
+        $data = $request->validate([
+            'phone' => 'required|string|regex:/^01[0125][0-9]{8}$/'
         ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid phone number format',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         $phone = $request->phone;
-
         // Check rate limiting (max 3 attempts per hour)
         $recentAttempts = OtpVerification::where('phone', $phone)
             ->where('created_at', '>', now()->subHour())
             ->count();
 
         if ($recentAttempts >= 3) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Too many OTP requests. Please try again later.',
-                'retry_after' => 3600
-            ], 429);
+            return $this->errorResponse('Too many OTP requests. Please try again later.', 429, null, ['retry_after' => 3600]);
         }
 
         $result = $this->otpService->sendOtp($phone);
 
         if ($result['success']) {
-            return response()->json([
-                'status' => 'success',
-                'message' => 'OTP sent successfully',
-                'otp' => $result['otp_code'], // Only in debug mode
-                'expires_in' => 300 // 5 minutes
-            ]);
+            $data = ['expires_in' => 300];
+            if (app()->hasDebugModeEnabled()) {
+                $data['otp'] = $result['otp_code'];
+            }
+            return $this->apiResponse($data, 'OTP sent successfully', 200);
         }
 
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Failed to send OTP. Please try again.'
-        ], 500);
+        return $this->errorResponse('Failed to send OTP. Please try again.', 500);
     }
 
     public function verifyOtp(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'phone' => 'required|string|regex:/^(01[0125][0-9]{8}|(\+2|002)01[0125][0-9]{8})$/',
+            'phone' => 'required|string|regex:/^01[0125][0-9]{8}$/',
             'otp_code' => 'required|string|size:6',
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid input',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->errorResponse('Invalid input', 422, $validator->errors());
         }
 
         $verification = $this->otpService->verifyOtp($request->phone, $request->otp_code);
 
         if (!$verification['success']) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $verification['message']
-            ], 400);
+            return $this->errorResponse($verification['message'], 400);
         }
 
-        // Find or create user
+        // Check if user exists
         $user = User::where('phone', $request->phone)->first();
 
-        if (!$user) {
-            $user = User::create([
-                'phone' => $request->phone,
-                'phone_verified_at' => now(),
-                'preferred_language' => 'ar',
-                'status' => 'active'
-            ]);
-        } else {
+        if ($user) {
+            // Existing user - login
             $user->update(['phone_verified_at' => now()]);
-        }
+            $token = $user->createToken('mobile-app')->plainTextToken;
 
-        // Create token
-        $token = $user->createToken('mobile-app')->plainTextToken;
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Phone verified successfully',
-            'data' => [
+            return $this->apiResponse([
                 'user' => [
                     'id' => $user->id,
                     'phone' => $user->phone,
@@ -124,9 +90,71 @@ class AuthController extends Controller
                     'reward_points' => $user->reward_points,
                 ],
                 'token' => $token,
-                'token_type' => 'Bearer'
-            ]
+                'token_type' => 'Bearer',
+                'is_new_user' => false
+            ], 'Phone verified successfully', 200);
+        }
+
+        // New user - return verification token for registration
+        return $this->apiResponse([
+            'phone' => $request->phone,
+            'verified' => true,
+            'is_new_user' => true
+        ], 'Phone verified. Please complete your registration.', 200);
+    }
+
+    public function completeRegistration(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'phone' => 'required|string|regex:/^01[0125][0-9]{8}$/|unique:users,phone',
+            'name' => 'required|string|max:255|min:3',
+            'password' => 'required|string|min:8|confirmed',
+            'email' => 'nullable|email|unique:users,email',
+            'preferred_language' => 'nullable|in:ar,en',
         ]);
+
+        if ($validator->fails()) {
+            return $this->errorResponse('Invalid input', 422, $validator->errors());
+        }
+
+        // Verify that OTP was verified for this phone
+        $recentVerification = OtpVerification::where('phone', $request->phone)
+            ->where('verified_at', '!=', null)
+            ->where('verified_at', '>', now()->subMinutes(10))
+            ->first();
+
+        if (!$recentVerification) {
+            return $this->errorResponse('Phone verification expired. Please verify your phone again.', 400);
+        }
+
+        // Create user
+        $user = User::create([
+            'phone' => $request->phone,
+            'name' => $request->name,
+            'password' => Hash::make($request->password),
+            'email' => $request->email,
+            'phone_verified_at' => now(),
+            'preferred_language' => $request->preferred_language ?? 'ar',
+            'status' => 'active'
+        ]);
+
+        // Create token
+        $token = $user->createToken('mobile-app')->plainTextToken;
+
+        return $this->apiResponse([
+            'user' => [
+                'id' => $user->id,
+                'phone' => $user->phone,
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar,
+                'preferred_language' => $user->preferred_language,
+                'ad_free_until' => $user->ad_free_until,
+                'reward_points' => $user->reward_points,
+            ],
+            'token' => $token,
+            'token_type' => 'Bearer'
+        ], 'Registration completed successfully', 201);
     }
 
     public function socialLogin(Request $request, string $provider): JsonResponse
@@ -139,18 +167,11 @@ class AuthController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid input',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->errorResponse('Invalid input', 422, $validator->errors());
         }
 
         if (!in_array($provider, ['google', 'apple', 'facebook'])) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unsupported social provider'
-            ], 400);
+            return $this->errorResponse('Unsupported social provider', 400);
         }
 
         // Check if social login exists
@@ -189,56 +210,46 @@ class AuthController extends Controller
         // Create token
         $token = $user->createToken('mobile-app')->plainTextToken;
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Social login successful',
-            'data' => [
-                'user' => [
-                    'id' => $user->id,
-                    'phone' => $user->phone,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'avatar' => $user->avatar,
-                    'preferred_language' => $user->preferred_language,
-                    'ad_free_until' => $user->ad_free_until,
-                    'reward_points' => $user->reward_points,
-                ],
-                'token' => $token,
-                'token_type' => 'Bearer'
-            ]
-        ]);
+        return $this->apiResponse([
+            'user' => [
+                'id' => $user->id,
+                'phone' => $user->phone,
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar,
+                'preferred_language' => $user->preferred_language,
+                'ad_free_until' => $user->ad_free_until,
+                'reward_points' => $user->reward_points,
+            ],
+            'token' => $token,
+            'token_type' => 'Bearer'
+        ], 'Social login successful', 200);
     }
 
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Logged out successfully'
-        ]);
+        return $this->apiResponse(null, 'Logged out successfully', 200);
     }
 
     public function profile(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'user' => [
-                    'id' => $user->id,
-                    'phone' => $user->phone,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'avatar' => $user->avatar,
-                    'preferred_language' => $user->preferred_language,
-                    'ad_free_until' => $user->ad_free_until,
-                    'reward_points' => $user->reward_points,
-                    'created_at' => $user->created_at,
-                ]
+        return $this->apiResponse([
+            'user' => [
+                'id' => $user->id,
+                'phone' => $user->phone,
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar,
+                'preferred_language' => $user->preferred_language,
+                'ad_free_until' => $user->ad_free_until,
+                'reward_points' => $user->reward_points,
+                'created_at' => $user->created_at,
             ]
-        ]);
+        ], 'success', 200);
     }
 
     public function updateProfile(Request $request): JsonResponse
@@ -251,11 +262,7 @@ class AuthController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid input',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->errorResponse('Invalid input', 422, $validator->errors());
         }
 
         $user = $request->user();
@@ -268,21 +275,17 @@ class AuthController extends Controller
 
         $user->update($updateData);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Profile updated successfully',
-            'data' => [
-                'user' => [
-                    'id' => $user->id,
-                    'phone' => $user->phone,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'avatar' => $user->avatar,
-                    'preferred_language' => $user->preferred_language,
-                    'ad_free_until' => $user->ad_free_until,
-                    'reward_points' => $user->reward_points,
-                ]
+        return $this->apiResponse([
+            'user' => [
+                'id' => $user->id,
+                'phone' => $user->phone,
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar,
+                'preferred_language' => $user->preferred_language,
+                'ad_free_until' => $user->ad_free_until,
+                'reward_points' => $user->reward_points,
             ]
-        ]);
+        ], 'Profile updated successfully', 200);
     }
 }

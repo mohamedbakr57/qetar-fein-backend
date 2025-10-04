@@ -6,12 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Train\Station;
 use App\Models\Train\Stop;
 use App\Models\Train\TrainTrip;
+use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Carbon\Carbon;
 
 class StationController extends Controller
 {
+    use ApiResponse;
     public function index(Request $request): JsonResponse
     {
         $query = Station::query();
@@ -58,16 +60,13 @@ class StationController extends Controller
 
         $stations = $query->paginate(20);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'stations' => $stations->items(),
-                'pagination' => [
-                    'current_page' => $stations->currentPage(),
-                    'last_page' => $stations->lastPage(),
-                    'per_page' => $stations->perPage(),
-                    'total' => $stations->total(),
-                ]
+        return $this->apiResponse([
+            'stations' => $stations->items(),
+            'pagination' => [
+                'current_page' => $stations->currentPage(),
+                'last_page' => $stations->lastPage(),
+                'per_page' => $stations->perPage(),
+                'total' => $stations->total(),
             ]
         ]);
     }
@@ -77,10 +76,7 @@ class StationController extends Controller
         $station = Station::find($id);
 
         if (!$station) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Station not found'
-            ], 404);
+            return $this->errorResponse('Station not found', 404);
         }
 
         // Get some statistics about this station
@@ -90,12 +86,9 @@ class StationController extends Controller
             'major_stop_count' => Stop::where('station_id', $id)->where('is_major_stop', true)->count(),
         ];
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'station' => $station,
-                'statistics' => $stats
-            ]
+        return $this->apiResponse([
+            'station' => $station,
+            'statistics' => $stats
         ]);
     }
 
@@ -104,10 +97,7 @@ class StationController extends Controller
         $station = Station::find($id);
 
         if (!$station) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Station not found'
-            ], 404);
+            return $this->errorResponse('Station not found', 404);
         }
 
         $date = $request->get('date', Carbon::today()->format('Y-m-d'));
@@ -168,17 +158,14 @@ class StationController extends Controller
             ];
         });
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'station' => [
-                    'id' => $station->id,
-                    'name' => $this->getStationName($station),
-                    'code' => $station->code
-                ],
-                'date' => $date,
-                'departures' => $departures
-            ]
+        return $this->apiResponse([
+            'station' => [
+                'id' => $station->id,
+                'name' => $this->getStationName($station),
+                'code' => $station->code
+            ],
+            'date' => $date,
+            'departures' => $departures
         ]);
     }
 
@@ -187,10 +174,7 @@ class StationController extends Controller
         $station = Station::find($id);
 
         if (!$station) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Station not found'
-            ], 404);
+            return $this->errorResponse('Station not found', 404);
         }
 
         $date = $request->get('date', Carbon::today()->format('Y-m-d'));
@@ -253,17 +237,14 @@ class StationController extends Controller
             ];
         });
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'station' => [
-                    'id' => $station->id,
-                    'name' => $this->getStationName($station),
-                    'code' => $station->code
-                ],
-                'date' => $date,
-                'arrivals' => $arrivals
-            ]
+        return $this->apiResponse([
+            'station' => [
+                'id' => $station->id,
+                'name' => $this->getStationName($station),
+                'code' => $station->code
+            ],
+            'date' => $date,
+            'arrivals' => $arrivals
         ]);
     }
 

@@ -8,6 +8,7 @@ use App\Models\CommunityMessage;
 use App\Models\Train\TrainTrip;
 use App\Models\Train\Station;
 use App\Events\CommunityMessagePosted;
+use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -15,15 +16,13 @@ use Illuminate\Support\Str;
 
 class CommunityController extends Controller
 {
+    use ApiResponse;
     public function show(int $tripId, Request $request): JsonResponse
     {
         $trip = TrainTrip::with('train')->find($tripId);
 
         if (!$trip) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Trip not found'
-            ], 404);
+            return $this->errorResponse('Trip not found', 404);
         }
 
         // Get train name - handle both JSON and plain text formats
@@ -42,14 +41,11 @@ class CommunityController extends Controller
             ]
         );
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'community' => $community,
-                'trip' => $trip,
-                'member_count' => $community->member_count,
-                'message_count' => $community->message_count,
-            ]
+        return $this->apiResponse([
+            'community' => $community,
+            'trip' => $trip,
+            'member_count' => $community->member_count,
+            'message_count' => $community->message_count,
         ]);
     }
 
@@ -58,10 +54,7 @@ class CommunityController extends Controller
         $community = Community::where('trip_id', $tripId)->first();
 
         if (!$community) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Community not found'
-            ], 404);
+            return $this->errorResponse('Community not found', 404);
         }
 
         $query = CommunityMessage::with(['user', 'station'])
@@ -85,17 +78,14 @@ class CommunityController extends Controller
         $messages = $query->orderBy('created_at', 'desc')
             ->paginate(50);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'community' => $community,
-                'messages' => $messages->items(),
-                'pagination' => [
-                    'current_page' => $messages->currentPage(),
-                    'last_page' => $messages->lastPage(),
-                    'per_page' => $messages->perPage(),
-                    'total' => $messages->total(),
-                ]
+        return $this->apiResponse([
+            'community' => $community,
+            'messages' => $messages->items(),
+            'pagination' => [
+                'current_page' => $messages->currentPage(),
+                'last_page' => $messages->lastPage(),
+                'per_page' => $messages->perPage(),
+                'total' => $messages->total(),
             ]
         ]);
     }
@@ -110,20 +100,13 @@ class CommunityController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid input',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->errorResponse('Invalid input', 422, ['errors' => $validator->errors()]);
         }
 
         $community = Community::where('trip_id', $tripId)->first();
 
         if (!$community) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Community not found'
-            ], 404);
+            return $this->errorResponse('Community not found', 404);
         }
 
         $user = $request->user();
@@ -132,10 +115,7 @@ class CommunityController extends Controller
         // Handle guest users
         if (!$user) {
             if (!$request->has('guest_name')) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Guest name is required for anonymous messages'
-                ], 422);
+                return $this->errorResponse('Guest name is required for anonymous messages', 422);
             }
 
             $guestId = Str::random(10);
@@ -146,10 +126,7 @@ class CommunityController extends Controller
         $trainStationIds = $trip->train->stops->pluck('station_id');
 
         if (!$trainStationIds->contains($request->station_id)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Selected station is not on this train route'
-            ], 400);
+            return $this->errorResponse('Selected station is not on this train route', 400);
         }
 
         // Rate limiting: max 5 messages per user per trip
@@ -164,10 +141,7 @@ class CommunityController extends Controller
             ->count();
 
         if ($existingMessagesCount >= 5) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Maximum message limit reached for this trip'
-            ], 429);
+            return $this->errorResponse('Maximum message limit reached for this trip', 429);
         }
 
         $message = CommunityMessage::create([
@@ -192,13 +166,7 @@ class CommunityController extends Controller
         // Broadcast message to community
         broadcast(new CommunityMessagePosted($message))->toOthers();
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Message posted successfully',
-            'data' => [
-                'message' => $message
-            ]
-        ], 201);
+        return $this->apiResponse(['message' => $message], 'Message posted successfully', 201);
     }
 
     public function verifyMessage(int $tripId, int $messageId, Request $request): JsonResponse
@@ -208,29 +176,19 @@ class CommunityController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid verification type',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->errorResponse('Invalid verification type', 422, ['errors' => $validator->errors()]);
         }
 
         $user = $request->user();
 
         if (!$user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Authentication required for message verification'
-            ], 401);
+            return $this->errorResponse('Authentication required for message verification', 401);
         }
 
         $community = Community::where('trip_id', $tripId)->first();
 
         if (!$community) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Community not found'
-            ], 404);
+            return $this->errorResponse('Community not found', 404);
         }
 
         $message = CommunityMessage::where('id', $messageId)
@@ -238,26 +196,17 @@ class CommunityController extends Controller
             ->first();
 
         if (!$message) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Message not found'
-            ], 404);
+            return $this->errorResponse('Message not found', 404);
         }
 
         // Check if user already verified this message
         if ($message->verifications()->where('user_id', $user->id)->exists()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'You have already verified this message'
-            ], 400);
+            return $this->errorResponse('You have already verified this message', 400);
         }
 
         // Can't verify own message
         if ($message->user_id === $user->id) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'You cannot verify your own message'
-            ], 400);
+            return $this->errorResponse('You cannot verify your own message', 400);
         }
 
         // Create verification
@@ -275,17 +224,13 @@ class CommunityController extends Controller
             'is_verified' => $confirmations >= 3 && $confirmations > $disputes,
         ]);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Message verification recorded',
-            'data' => [
-                'message_id' => $message->id,
-                'verification_count' => $message->verification_count,
-                'is_verified' => $message->is_verified,
-                'confirmations' => $confirmations,
-                'disputes' => $disputes,
-            ]
-        ]);
+        return $this->apiResponse([
+            'message_id' => $message->id,
+            'verification_count' => $message->verification_count,
+            'is_verified' => $message->is_verified,
+            'confirmations' => $confirmations,
+            'disputes' => $disputes,
+        ], 'Message verification recorded');
     }
 
     public function getMessageTypes(): JsonResponse
@@ -323,11 +268,6 @@ class CommunityController extends Controller
             ],
         ];
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'message_types' => $messageTypes
-            ]
-        ]);
+        return $this->apiResponse(['message_types' => $messageTypes]);
     }
 }

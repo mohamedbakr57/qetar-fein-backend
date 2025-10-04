@@ -42,7 +42,6 @@ class OtpService
             ->where('verified_at', null)
             ->orderBy('created_at', 'desc')
             ->first();
-
         if (!$verification) {
             return [
                 'success' => false,

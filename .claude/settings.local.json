@@ -16,7 +16,8 @@
       "Read(//d/Main/**)",
       "Read(//c/Users/Moham/Downloads/**)",
       "Bash(rm:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Read(//d/Main Projects/Backend/app/Traits/**)"
     ],
     "deny": [],
     "ask": []

@@ -7,11 +7,14 @@ use App\Models\Reward;
 use App\Models\Badge;
 use App\Models\UserBadge;
 use App\Services\RewardService;
+use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
 class RewardController extends Controller
 {
+    use ApiResponse;
+
     protected $rewardService;
 
     public function __construct(RewardService $rewardService)
@@ -44,17 +47,14 @@ class RewardController extends Controller
         // Get summary
         $summary = $this->rewardService->getUserRewardsSummary($user);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'rewards' => $rewards->items(),
-                'summary' => $summary,
-                'pagination' => [
-                    'current_page' => $rewards->currentPage(),
-                    'last_page' => $rewards->lastPage(),
-                    'per_page' => $rewards->perPage(),
-                    'total' => $rewards->total(),
-                ]
+        return $this->apiResponse([
+            'rewards' => $rewards->items(),
+            'summary' => $summary,
+            'pagination' => [
+                'current_page' => $rewards->currentPage(),
+                'last_page' => $rewards->lastPage(),
+                'per_page' => $rewards->perPage(),
+                'total' => $rewards->total(),
             ]
         ]);
     }
@@ -75,19 +75,16 @@ class RewardController extends Controller
             ->orderBy('rarity', 'asc')
             ->get();
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'earned_badges' => $userBadges->map(function($userBadge) {
-                    return [
-                        'badge' => $userBadge->badge,
-                        'earned_at' => $userBadge->earned_at,
-                    ];
-                }),
-                'available_badges' => $availableBadges,
-                'earned_count' => $userBadges->count(),
-                'total_available' => Badge::where('is_active', true)->count(),
-            ]
+        return $this->apiResponse([
+            'earned_badges' => $userBadges->map(function($userBadge) {
+                return [
+                    'badge' => $userBadge->badge,
+                    'earned_at' => $userBadge->earned_at,
+                ];
+            }),
+            'available_badges' => $availableBadges,
+            'earned_count' => $userBadges->count(),
+            'total_available' => Badge::where('is_active', true)->count(),
         ]);
     }
 
@@ -96,10 +93,7 @@ class RewardController extends Controller
         $badge = Badge::find($id);
 
         if (!$badge) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Badge not found'
-            ], 404);
+            return $this->errorResponse('Badge not found', 404);
         }
 
         // Get badge statistics
@@ -108,15 +102,12 @@ class RewardController extends Controller
             ->where('earned_at', '>=', now()->startOfMonth())
             ->count();
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'badge' => $badge,
-                'statistics' => [
-                    'total_earned' => $totalEarned,
-                    'earned_this_month' => $earnedThisMonth,
-                    'rarity_percentage' => $totalEarned > 0 ? round(($totalEarned / 1000) * 100, 2) : 0, // Assuming 1000 total users
-                ]
+        return $this->apiResponse([
+            'badge' => $badge,
+            'statistics' => [
+                'total_earned' => $totalEarned,
+                'earned_this_month' => $earnedThisMonth,
+                'rarity_percentage' => $totalEarned > 0 ? round(($totalEarned / 1000) * 100, 2) : 0, // Assuming 1000 total users
             ]
         ]);
     }
@@ -212,14 +203,11 @@ class RewardController extends Controller
             ];
         });
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'leaderboard' => $leaderboard,
-                'type' => $type,
-                'timeframe' => $timeframe,
-                'total_participants' => $users->count(),
-            ]
+        return $this->apiResponse([
+            'leaderboard' => $leaderboard,
+            'type' => $type,
+            'timeframe' => $timeframe,
+            'total_participants' => $users->count(),
         ]);
     }
 
@@ -231,12 +219,9 @@ class RewardController extends Controller
                       ->get()
                       ->groupBy('category');
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'badges_by_category' => $badges,
-                'total_badges' => Badge::where('is_active', true)->count(),
-            ]
+        return $this->apiResponse([
+            'badges_by_category' => $badges,
+            'total_badges' => Badge::where('is_active', true)->count(),
         ]);
     }
 
@@ -257,18 +242,15 @@ class RewardController extends Controller
                                ->limit(3)
                                ->get();
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'summary' => $summary,
-                'recent_rewards' => $recentRewards,
-                'recent_badges' => $recentBadges->map(function($userBadge) {
-                    return [
-                        'badge' => $userBadge->badge,
-                        'earned_at' => $userBadge->earned_at,
-                    ];
-                }),
-            ]
+        return $this->apiResponse([
+            'summary' => $summary,
+            'recent_rewards' => $recentRewards,
+            'recent_badges' => $recentBadges->map(function($userBadge) {
+                return [
+                    'badge' => $userBadge->badge,
+                    'earned_at' => $userBadge->earned_at,
+                ];
+            }),
         ]);
     }
 }

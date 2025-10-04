@@ -11,34 +11,37 @@ class BusinessRulesTrainSeeder extends Seeder
     {
         $this->command->info('Implementing train system according to business rules...');
 
-        $sqlitePath = env('SQLITE_IMPORT_PATH', 'D:\trains.db');
+        $stationsJsonPath = base_path('stations.json');
+        $trainsJsonPath = base_path('trains_edited.json');
 
-        if (!file_exists($sqlitePath)) {
-            $this->command->warn("SQLite database not found at: {$sqlitePath}");
-            $this->command->info('Skipping import. Use StationsSeeder and TrainsSeeder for sample data instead.');
+        if (!file_exists($stationsJsonPath)) {
+            $this->command->warn("Stations JSON file not found at: {$stationsJsonPath}");
+            $this->command->info('Skipping import.');
+            return;
+        }
+
+        if (!file_exists($trainsJsonPath)) {
+            $this->command->warn("Trains JSON file not found at: {$trainsJsonPath}");
+            $this->command->info('Skipping import.');
             return;
         }
 
         try {
-            $sqliteDb = new \SQLite3($sqlitePath);
+            $stationsJson = json_decode(file_get_contents($stationsJsonPath), true);
+            $trainsJson = json_decode(file_get_contents($trainsJsonPath), true);
 
-            // Test if the database has the expected schema
-            $testQuery = @$sqliteDb->query("SELECT name FROM sqlite_master WHERE type='table' AND name='Station'");
-            if (!$testQuery || !$testQuery->fetchArray()) {
-                $this->command->warn('SQLite database does not have the expected schema (missing Station table)');
-                $this->command->info('Skipping import. Use StationsSeeder and TrainsSeeder for sample data instead.');
-                $sqliteDb->close();
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $this->command->error('Error parsing JSON files: ' . json_last_error_msg());
                 return;
             }
 
             $this->clearUnnecessaryData();
-            $this->importCoreData($sqliteDb);
+            $this->importCoreData($stationsJson, $trainsJson);
 
-            $sqliteDb->close();
             $this->command->info('Completed business rules implementation');
         } catch (\Exception $e) {
-            $this->command->error('Error importing from SQLite database: ' . $e->getMessage());
-            $this->command->info('Skipping import. Use StationsSeeder and TrainsSeeder for sample data instead.');
+            $this->command->error('Error importing from JSON files: ' . $e->getMessage());
+            $this->command->info('Skipping import.');
         }
     }
 
@@ -67,44 +70,47 @@ class BusinessRulesTrainSeeder extends Seeder
         }
     }
 
-    private function importCoreData($sqliteDb): void
+    private function importCoreData(array $stationsJson, array $trainsJson): void
     {
-        $this->importStations($sqliteDb);
-        $this->importTrains($sqliteDb);
-        $this->importStops($sqliteDb);
-        $this->importNoStops($sqliteDb);
+        $this->importStations($stationsJson);
+        $this->importTrains($trainsJson);
+        $this->importStops($trainsJson);
     }
 
-    private function importStations($sqliteDb): void
+    private function importStations(array $stationsJson): void
     {
-        $this->command->info('Importing stations with stop categories...');
-
-        $stations = $sqliteDb->query("
-            SELECT s.*, sc.Stop_Category_En, sc.Stop_Category_Ar
-            FROM Station s
-            LEFT JOIN Stop_Category sc ON s.Stop_Category_ID = sc.Stop_Category_ID
-        ");
+        $this->command->info('Importing stations from JSON...');
 
         $stationData = [];
-        while ($row = $stations->fetchArray(SQLITE3_ASSOC)) {
-            $coordinates = $this->getStationCoordinates($row['Station_En']);
+        foreach ($stationsJson as $index => $stationName) {
+            // Trim whitespace from station names
+            $stationName = trim($stationName);
+
+            // Skip empty station names
+            if (empty($stationName)) {
+                continue;
+            }
+
+            $stationId = $index + 1;
+            $coordinates = $this->getStationCoordinates($stationName);
+
             $stationData[] = [
-                'id' => $row['Station_ID'],
-                'code' => strtoupper(substr(str_replace(' ', '', $row['Station_En'] ?? 'UNK'), 0, 3)) . sprintf('%03d', $row['Station_ID']),
+                'id' => $stationId,
+                'code' => strtoupper(substr(str_replace([' ', '-'], '', $stationName), 0, 3)) . sprintf('%03d', $stationId),
                 'name' => json_encode([
-                    'en' => $row['Station_En'] ?? 'Unknown',
-                    'ar' => $row['Station_Ar'] ?? 'غير معروف'
+                    'en' => $stationName,
+                    'ar' => $stationName
                 ]),
                 'description' => json_encode([
-                    'en' => 'Railway station in Egypt - Category: ' . ($row['Stop_Category_En'] ?? 'Standard'),
-                    'ar' => 'محطة سكة حديد في مصر - فئة: ' . ($row['Stop_Category_Ar'] ?? 'عادية')
+                    'en' => 'Railway station in Egypt',
+                    'ar' => 'محطة سكة حديد في مصر'
                 ]),
                 'latitude' => $coordinates['lat'],
                 'longitude' => $coordinates['lng'],
                 'elevation' => 0,
                 'city' => json_encode([
-                    'en' => $row['Station_En'] ?? 'Unknown',
-                    'ar' => $row['Station_Ar'] ?? 'غير معروف'
+                    'en' => $stationName,
+                    'ar' => $stationName
                 ]),
                 'region' => json_encode([
                     'en' => 'Egypt',
@@ -112,50 +118,52 @@ class BusinessRulesTrainSeeder extends Seeder
                 ]),
                 'country_code' => 'EG',
                 'timezone' => 'Africa/Cairo',
-                'facilities' => json_encode($this->getStationFacilities($row['Stop_Category_En'] ?? 'Major Cities')),
+                'facilities' => json_encode($this->getStationFacilities('Standard')),
                 'status' => 'active',
-                'order_index' => $row['Station_ID'],
+                'order_index' => $stationId,
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
         }
 
-        DB::table('stations')->insert($stationData);
+        // Insert in batches
+        $chunks = array_chunk($stationData, 100);
+        foreach ($chunks as $chunk) {
+            DB::table('stations')->insert($chunk);
+        }
+
         $this->command->info('Imported ' . count($stationData) . ' stations');
     }
 
-    private function importTrains($sqliteDb): void
+    private function importTrains(array $trainsJson): void
     {
-        $this->command->info('Importing trains with types and notes...');
-
-        $trains = $sqliteDb->query("
-            SELECT t.*, tt.Train_Type_En, tt.Train_Type_Ar, tn.Train_Note_En, tn.Train_Note_Ar
-            FROM Train t
-            LEFT JOIN Train_Type tt ON t.Train_Type_ID = tt.Train_Type_ID
-            LEFT JOIN Train_Note tn ON t.Train_Note_ID = tn.Train_Note_ID
-        ");
+        $this->command->info('Importing trains from JSON...');
 
         $trainData = [];
-        while ($row = $trains->fetchArray(SQLITE3_ASSOC)) {
+        foreach ($trainsJson as $index => $train) {
+            $trainId = $index + 1;
+            $trainNumber = $train['number'];
+            $trainType = $train['type'] ?? 'passenger';
+
             $trainData[] = [
-                'id' => $row['Train_ID'],
-                'number' => $row['Train_No'],
+                'id' => $trainId,
+                'number' => $trainNumber,
                 'name' => json_encode([
-                    'en' => 'Train ' . $row['Train_No'] . ' (' . ($row['Train_Type_En'] ?? 'Standard') . ')',
-                    'ar' => 'قطار ' . $row['Train_No'] . ' (' . ($row['Train_Type_Ar'] ?? 'عادي') . ')'
+                    'en' => 'Train ' . $trainNumber . ' (' . $trainType . ')',
+                    'ar' => 'قطار ' . $trainNumber . ' (' . $trainType . ')'
                 ]),
                 'description' => json_encode([
-                    'en' => $row['Train_Note_En'] ?? 'Egyptian National Railways service',
-                    'ar' => $row['Train_Note_Ar'] ?? 'خدمة السكك الحديدية المصرية'
+                    'en' => 'Egyptian National Railways service',
+                    'ar' => 'خدمة السكك الحديدية المصرية'
                 ]),
-                'type' => $this->mapTrainType($row['Train_Type_En'] ?? 'passenger'),
+                'type' => $this->mapTrainType($trainType),
                 'operator' => json_encode([
                     'en' => 'Egyptian National Railways',
                     'ar' => 'السكك الحديدية المصرية'
                 ]),
-                'capacity' => $this->getTrainCapacity($row['Train_Type_En'] ?? 'Passengers'),
-                'max_speed' => $this->getMaxSpeed($row['Train_Type_En'] ?? 'Passengers'),
-                'amenities' => json_encode($this->getTrainAmenities($row['Train_Type_En'] ?? 'Passengers')),
+                'capacity' => $this->getTrainCapacity($trainType),
+                'max_speed' => $this->getMaxSpeed($trainType),
+                'amenities' => json_encode($this->getTrainAmenities($trainType)),
                 'status' => 'active',
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -166,49 +174,90 @@ class BusinessRulesTrainSeeder extends Seeder
         $this->command->info('Imported ' . count($trainData) . ' trains');
     }
 
-    private function importStops($sqliteDb): void
+    private function importStops(array $trainsJson): void
     {
-        $this->command->info('Importing train stops (journey sequences)...');
+        $this->command->info('Importing train stops from JSON...');
 
-        $stops = $sqliteDb->query("
-            SELECT
-                s.Train_ID,
-                s.Station_ID,
-                s.Stop_No,
-                s.Arrival_Time,
-                s.Departure_Time,
-                st.Station_En,
-                sc.Stop_Category_En
-            FROM Stop s
-            JOIN Station st ON s.Station_ID = st.Station_ID
-            LEFT JOIN Stop_Category sc ON st.Stop_Category_ID = sc.Stop_Category_ID
-            ORDER BY s.Train_ID, s.Stop_No
-        ");
+        // Build station name to ID mapping (with trimmed names)
+        $stationMapping = [];
+        $stations = DB::table('stations')->get();
+        foreach ($stations as $station) {
+            $nameData = json_decode($station->name, true);
+            $trimmedName = trim($nameData['en']);
+            $stationMapping[$trimmedName] = $station->id;
+        }
 
         $stopData = [];
-        while ($row = $stops->fetchArray(SQLITE3_ASSOC)) {
-            $stopData[] = [
-                'train_id' => $row['Train_ID'],
-                'station_id' => $row['Station_ID'],
-                'stop_number' => (int) $row['Stop_No'],
-                'arrival_time' => $this->parseTime($row['Arrival_Time']),
-                'departure_time' => $this->parseTime($row['Departure_Time']),
-                'platform' => 'Platform ' . rand(1, 8),
-                'stop_duration_minutes' => $this->calculateStopDuration(
-                    $row['Arrival_Time'],
-                    $row['Departure_Time']
-                ),
-                'is_major_stop' => $this->isMajorStop($row['Stop_Category_En']),
-                'notes' => $this->getStopNotes($row['Station_En']),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
+        $skippedStopsCount = 0;
+        $missingStations = [];
+        $corruptedTrains = [];
 
-            // Insert in batches to avoid memory issues
-            if (count($stopData) >= 1000) {
-                DB::table('stops')->insert($stopData);
-                $this->command->info('Inserted batch of ' . count($stopData) . ' stops');
-                $stopData = [];
+        foreach ($trainsJson as $index => $train) {
+            $trainId = $index + 1;
+            $trainNumber = $train['number'] ?? $trainId;
+
+            if (!isset($train['points']) || !is_array($train['points'])) {
+                continue;
+            }
+
+            $totalPoints = count($train['points']);
+            $emptyPoints = 0;
+
+            foreach ($train['points'] as $stopIndex => $point) {
+                $stationName = trim($point['stationName'] ?? '');
+
+                // Track empty station names
+                if (empty($stationName)) {
+                    $emptyPoints++;
+                    $skippedStopsCount++;
+                    continue;
+                }
+
+                $stationId = $stationMapping[$stationName] ?? null;
+
+                if (!$stationId) {
+                    if (!isset($missingStations[$stationName])) {
+                        $missingStations[$stationName] = 0;
+                    }
+                    $missingStations[$stationName]++;
+                    $skippedStopsCount++;
+                    continue;
+                }
+
+                $stopData[] = [
+                    'train_id' => $trainId,
+                    'station_id' => $stationId,
+                    'stop_number' => $stopIndex + 1,
+                    'arrival_time' => $this->parseTime($point['arrivingTime']),
+                    'departure_time' => $this->parseTime($point['departingTime']),
+                    'platform' => 'Platform ' . rand(1, 8),
+                    'stop_duration_minutes' => $this->calculateStopDuration(
+                        $point['arrivingTime'],
+                        $point['departingTime']
+                    ),
+                    'is_major_stop' => false,
+                    'notes' => $this->getStopNotes($stationName),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+
+                // Insert in batches to avoid memory issues
+                if (count($stopData) >= 1000) {
+                    DB::table('stops')->insert($stopData);
+                    $this->command->info('Inserted batch of ' . count($stopData) . ' stops');
+                    $stopData = [];
+                }
+            }
+
+            // Track trains with significant data corruption
+            if ($emptyPoints > 0) {
+                $corruptionPercent = round(($emptyPoints / $totalPoints) * 100, 1);
+                $corruptedTrains[] = [
+                    'number' => $trainNumber,
+                    'empty' => $emptyPoints,
+                    'total' => $totalPoints,
+                    'percent' => $corruptionPercent
+                ];
             }
         }
 
@@ -217,129 +266,85 @@ class BusinessRulesTrainSeeder extends Seeder
             DB::table('stops')->insert($stopData);
         }
 
+        // Report summary
+        $this->command->newLine();
+
+        if ($skippedStopsCount > 0) {
+            $this->command->warn("⚠ Skipped {$skippedStopsCount} stops due to missing/empty station names");
+        }
+
+        if (!empty($missingStations)) {
+            $this->command->warn("Missing stations in JSON: " . implode(', ', array_keys($missingStations)));
+        }
+
+        if (!empty($corruptedTrains)) {
+            $this->command->warn("⚠ Found " . count($corruptedTrains) . " trains with corrupted data (empty station names):");
+            foreach ($corruptedTrains as $corrupt) {
+                $this->command->warn("  - Train {$corrupt['number']}: {$corrupt['empty']}/{$corrupt['total']} stops empty ({$corrupt['percent']}%)");
+            }
+            $this->command->info("💡 Consider cleaning the trains_edited.json file to fix these issues.");
+        }
+
+        $this->command->newLine();
         $total = DB::table('stops')->count();
-        $this->command->info('Imported total of ' . $total . ' train stops');
+        $this->command->info("✓ Imported total of {$total} train stops successfully");
     }
 
-    private function importNoStops($sqliteDb): void
-    {
-        $this->command->info('Importing no-stop records (express behavior)...');
-
-        // Create no_stops table if it doesn't exist
-        if (!DB::getSchemaBuilder()->hasTable('no_stops')) {
-            DB::getSchemaBuilder()->create('no_stops', function ($table) {
-                $table->id();
-                $table->foreignId('train_id')->constrained('trains');
-                $table->integer('stop_number');
-                $table->text('reason')->nullable();
-                $table->timestamps();
-
-                $table->unique(['train_id', 'stop_number'], 'unique_train_no_stop');
-            });
-        }
-
-        // Check if No_Stops view exists in SQLite
-        $noStopsQuery = $sqliteDb->query("
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='No_Stops'
-        ");
-
-        if ($noStopsQuery->fetchArray()) {
-            $noStops = $sqliteDb->query("
-                SELECT Train_ID, Stop_No
-                FROM No_Stops
-            ");
-
-            $noStopData = [];
-            while ($row = $noStops->fetchArray(SQLITE3_ASSOC)) {
-                $noStopData[] = [
-                    'train_id' => $row['Train_ID'],
-                    'stop_number' => (int) $row['Stop_No'],
-                    'reason' => 'Express service - no passenger boarding/alighting',
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-
-            if (!empty($noStopData)) {
-                DB::table('no_stops')->insert($noStopData);
-                $this->command->info('Imported ' . count($noStopData) . ' no-stop records');
-            }
-        } else {
-            $this->command->info('No no-stop data found in source database');
-        }
-    }
-
-    // Helper methods (same as before but simplified)
+    // Helper methods
     private function getStationCoordinates(string $stationName): array
     {
-        $coordinates = [
-            'Cairo' => ['lat' => 30.0444, 'lng' => 31.2357],
-            'Alexandria' => ['lat' => 31.2001, 'lng' => 29.9187],
-            'Aswan' => ['lat' => 24.0889, 'lng' => 32.8998],
-            'Luxor' => ['lat' => 25.6872, 'lng' => 32.6396],
-            'Tanta' => ['lat' => 30.7865, 'lng' => 31.0004],
-            'Mansoura' => ['lat' => 31.0409, 'lng' => 31.3785],
+        // Generate placeholder coordinates (centered around Egypt)
+        return [
+            'lat' => 26.0 + (rand(0, 800) / 100),
+            'lng' => 30.0 + (rand(0, 400) / 100)
         ];
-
-        return $coordinates[$stationName] ?? ['lat' => 30.0444 + (rand(-500, 500) / 1000), 'lng' => 31.2357 + (rand(-500, 500) / 1000)];
     }
 
-    private function getStationFacilities(?string $category): array
+    private function getStationFacilities(string $category): array
     {
-        $facilities = ['platform', 'waiting_area'];
-        if ($category === 'Express' || $category === 'Major Cities') {
-            $facilities = array_merge($facilities, ['restrooms', 'food_court', 'parking']);
-        }
-        return $facilities;
+        return ['platform', 'waiting_area'];
     }
 
     private function mapTrainType(string $type): string
     {
         return match($type) {
-            'Distinct' => 'passenger',
-            'Improved' => 'passenger',
-            'AC/Distinct' => 'passenger',
-            'AC' => 'passenger',
             'VIP' => 'high_speed',
-            'Sleep' => 'passenger',
-            'Passengers' => 'passenger',
             default => 'passenger'
         };
     }
 
-    private function getTrainCapacity(?string $type): int
+    private function getTrainCapacity(string $type): int
     {
         return match($type) {
             'VIP' => 150,
-            'AC/Distinct', 'AC' => 300,
-            'Distinct', 'Improved' => 400,
-            'Sleep' => 200,
+            'AC', 'AC/Distinct' => 300,
+            'Improved', 'Distinct' => 400,
             default => 500
         };
     }
 
-    private function getTrainAmenities(?string $type): array
+    private function getTrainAmenities(string $type): array
     {
         $amenities = ['seats', 'luggage_storage'];
-        if ($type && (str_contains($type, 'AC') || $type === 'VIP')) {
+
+        if (str_contains($type, 'AC') || $type === 'VIP') {
             $amenities[] = 'air_conditioning';
         }
+
         if ($type === 'VIP') {
-            $amenities = array_merge($amenities, ['wifi', 'food_service', 'power_outlets']);
+            $amenities[] = 'wifi';
+            $amenities[] = 'food_service';
         }
-        if ($type === 'Sleep') {
-            $amenities[] = 'sleeping_berths';
-        }
+
         return $amenities;
     }
 
-    private function getMaxSpeed(?string $type): int
+    private function getMaxSpeed(string $type): int
     {
         return match($type) {
             'VIP' => 160,
-            'Express', 'Distinct', 'Improved' => 120,
-            'AC/Distinct', 'AC' => 100,
+            'Improved', 'Distinct' => 120,
+            'AC', 'AC/Distinct' => 100,
             default => 80
         };
     }
@@ -352,46 +357,20 @@ class BusinessRulesTrainSeeder extends Seeder
 
     private function calculateStopDuration(?string $arrival, ?string $departure): int
     {
-        if (!$arrival || !$departure) return 5;
+        if (!$arrival || !$departure) return 1;
 
         $arrivalTime = strtotime($arrival);
         $departureTime = strtotime($departure);
 
         if ($departureTime <= $arrivalTime) {
-            return 5;
+            return 1;
         }
 
-        $duration = ($departureTime - $arrivalTime) / 60;
-        return max(1, (int) $duration);
-    }
-
-    private function isMajorStop(?string $category): bool
-    {
-        return in_array($category, ['Express', 'Major Cities', 'Direct']);
+        return max(1, (int)(($departureTime - $arrivalTime) / 60));
     }
 
     private function getStopNotes(string $stationName): ?string
     {
-        $notesData = [
-            'Cairo' => [
-                'en' => 'Main terminal station - all services available',
-                'ar' => 'المحطة الرئيسية - جميع الخدمات متاحة'
-            ],
-            'Alexandria' => [
-                'en' => 'Coastal terminus - Mediterranean gateway',
-                'ar' => 'محطة ساحلية - بوابة البحر المتوسط'
-            ],
-            'Aswan' => [
-                'en' => 'Southern terminus - Nile cruise connections',
-                'ar' => 'المحطة الجنوبية - رحلات النيل النهرية'
-            ],
-            'Luxor' => [
-                'en' => 'Tourist hub - Valley of the Kings access',
-                'ar' => 'مركز سياحي - مدخل وادي الملوك'
-            ],
-        ];
-
-        $note = $notesData[$stationName] ?? null;
-        return $note ? json_encode($note) : null;
+        return null;
     }
 }

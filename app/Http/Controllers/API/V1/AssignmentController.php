@@ -8,6 +8,7 @@ use App\Models\Train\TrainTrip;
 use App\Models\Train\Station;
 use App\Models\Reward;
 use App\Services\RewardService;
+use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -15,6 +16,8 @@ use Carbon\Carbon;
 
 class AssignmentController extends Controller
 {
+    use ApiResponse;
+
     protected $rewardService;
 
     public function __construct(RewardService $rewardService)
@@ -45,16 +48,13 @@ class AssignmentController extends Controller
 
         $assignments = $query->orderBy('created_at', 'desc')->paginate(20);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'assignments' => $assignments->items(),
-                'pagination' => [
-                    'current_page' => $assignments->currentPage(),
-                    'last_page' => $assignments->lastPage(),
-                    'per_page' => $assignments->perPage(),
-                    'total' => $assignments->total(),
-                ]
+        return $this->apiResponse([
+            'assignments' => $assignments->items(),
+            'pagination' => [
+                'current_page' => $assignments->currentPage(),
+                'last_page' => $assignments->lastPage(),
+                'per_page' => $assignments->perPage(),
+                'total' => $assignments->total(),
             ]
         ]);
     }
@@ -68,11 +68,7 @@ class AssignmentController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid input',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->errorResponse('Invalid input', 422, null, ['errors' => $validator->errors()]);
         }
 
         $user = $request->user();
@@ -84,20 +80,14 @@ class AssignmentController extends Controller
             ->first();
 
         if ($existingAssignment) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'You already have an active assignment for this trip'
-            ], 400);
+            return $this->errorResponse('You already have an active assignment for this trip', 400);
         }
 
         // Verify trip is valid and active
         $trip = TrainTrip::with('train.stops')->find($request->trip_id);
 
         if (!$trip || $trip->status !== 'active') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Trip is not available for assignment'
-            ], 400);
+            return $this->errorResponse('Trip is not available for assignment', 400);
         }
 
         // Verify stations are on the train's route (from stops)
@@ -105,10 +95,7 @@ class AssignmentController extends Controller
 
         if (!$trainStationIds->contains($request->boarding_station_id) ||
             !$trainStationIds->contains($request->destination_station_id)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Selected stations are not on the train route'
-            ], 400);
+            return $this->errorResponse('Selected stations are not on the train route', 400);
         }
 
         // Create assignment
@@ -124,13 +111,7 @@ class AssignmentController extends Controller
         // Load relationships
         $assignment->load(['trip.train', 'boardingStation', 'destinationStation']);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Assignment created successfully',
-            'data' => [
-                'assignment' => $assignment
-            ]
-        ], 201);
+        return $this->apiResponse(['assignment' => $assignment], 'Assignment created successfully', 201);
     }
 
     public function show(int $id): JsonResponse
@@ -141,18 +122,10 @@ class AssignmentController extends Controller
             ->first();
 
         if (!$assignment) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Assignment not found'
-            ], 404);
+            return $this->errorResponse('Assignment not found', 404);
         }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'assignment' => $assignment
-            ]
-        ]);
+        return $this->apiResponse(['assignment' => $assignment]);
     }
 
     public function updateLocation(int $id, Request $request): JsonResponse
@@ -166,11 +139,7 @@ class AssignmentController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid location data',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->errorResponse('Invalid location data', 422, null, ['errors' => $validator->errors()]);
         }
 
         $assignment = PassengerAssignment::where('id', $id)
@@ -179,17 +148,11 @@ class AssignmentController extends Controller
             ->first();
 
         if (!$assignment) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Active assignment not found'
-            ], 404);
+            return $this->errorResponse('Active assignment not found', 404);
         }
 
         if (!$assignment->location_sharing_enabled) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Location sharing is not enabled for this assignment'
-            ], 400);
+            return $this->errorResponse('Location sharing is not enabled for this assignment', 400);
         }
 
         // Update location
@@ -205,14 +168,10 @@ class AssignmentController extends Controller
         // Broadcast location update (implement in real-time service)
         // event(new PassengerLocationUpdated($assignment));
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Location updated successfully',
-            'data' => [
-                'assignment_id' => $assignment->id,
-                'location_updated_at' => $assignment->last_location_update,
-            ]
-        ]);
+        return $this->apiResponse([
+            'assignment_id' => $assignment->id,
+            'location_updated_at' => $assignment->last_location_update,
+        ], 'Location updated successfully');
     }
 
     public function enableLocationSharing(int $id): JsonResponse
@@ -223,18 +182,12 @@ class AssignmentController extends Controller
             ->first();
 
         if (!$assignment) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Active assignment not found'
-            ], 404);
+            return $this->errorResponse('Active assignment not found', 404);
         }
 
         $assignment->update(['location_sharing_enabled' => true]);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Location sharing enabled successfully'
-        ]);
+        return $this->apiResponse(null, 'Location sharing enabled successfully');
     }
 
     public function disableLocationSharing(int $id): JsonResponse
@@ -245,10 +198,7 @@ class AssignmentController extends Controller
             ->first();
 
         if (!$assignment) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Active assignment not found'
-            ], 404);
+            return $this->errorResponse('Active assignment not found', 404);
         }
 
         $assignment->update([
@@ -257,10 +207,7 @@ class AssignmentController extends Controller
             'current_longitude' => null,
         ]);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Location sharing disabled successfully'
-        ]);
+        return $this->apiResponse(null, 'Location sharing disabled successfully');
     }
 
     public function complete(int $id): JsonResponse
@@ -271,10 +218,7 @@ class AssignmentController extends Controller
             ->first();
 
         if (!$assignment) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Active assignment not found'
-            ], 404);
+            return $this->errorResponse('Active assignment not found', 404);
         }
 
         // Mark as completed
@@ -287,14 +231,10 @@ class AssignmentController extends Controller
         // Calculate and award rewards
         $rewards = $this->rewardService->processAssignmentCompletion($assignment);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Assignment completed successfully',
-            'data' => [
-                'assignment' => $assignment,
-                'rewards' => $rewards,
-            ]
-        ]);
+        return $this->apiResponse([
+            'assignment' => $assignment,
+            'rewards' => $rewards,
+        ], 'Assignment completed successfully');
     }
 
     public function cancel(int $id): JsonResponse
@@ -305,10 +245,7 @@ class AssignmentController extends Controller
             ->first();
 
         if (!$assignment) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Active assignment not found'
-            ], 404);
+            return $this->errorResponse('Active assignment not found', 404);
         }
 
         $assignment->update([
@@ -319,10 +256,7 @@ class AssignmentController extends Controller
             'current_longitude' => null,
         ]);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Assignment cancelled successfully'
-        ]);
+        return $this->apiResponse(null, 'Assignment cancelled successfully');
     }
 
     public function activeAssignment(Request $request): JsonResponse
@@ -335,19 +269,9 @@ class AssignmentController extends Controller
             ->first();
 
         if (!$assignment) {
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'assignment' => null
-                ]
-            ]);
+            return $this->apiResponse(['assignment' => null]);
         }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'assignment' => $assignment
-            ]
-        ]);
+        return $this->apiResponse(['assignment' => $assignment]);
     }
 }
