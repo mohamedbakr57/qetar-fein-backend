@@ -252,6 +252,59 @@ POST /auth/phone/verify
 }
 ```
 
+#### 3. Complete Registration
+```
+POST /auth/register/complete
+```
+
+**Request:**
+```json
+{
+    "phone": "01011761786",
+    "name": "Ahmed Mohamed",
+    "password": "password123",
+    "password_confirmation": "password123",
+    "email": "ahmed@example.com",
+    "preferred_language": "ar"
+}
+```
+
+**Response (200):**
+```json
+{
+    "status": "success",
+    "message": {
+        "ar": "تم إكمال التسجيل بنجاح",
+        "en": "Registration completed successfully"
+    },
+    "data": {
+        "user": {
+            "id": 1,
+            "phone": "01011761786",
+            "name": "Ahmed Mohamed",
+            "email": "ahmed@example.com",
+            "avatar": null,
+            "preferred_language": "ar",
+            "reward_points": 0,
+            "total_assignments": 0,
+            "successful_assignments": 0,
+            "ad_free_until": null,
+            "created_at": "2024-01-15T10:30:00Z"
+        },
+        "token": "1|eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+        "expires_at": "2024-02-15T10:30:00Z"
+    }
+}
+```
+
+**Business Rules:**
+- Phone number must be verified via OTP within the last 10 minutes
+- Phone: Egyptian format (11 digits starting with 010, 011, 012, or 015)
+- Name: 3-255 characters
+- Password: Minimum 8 characters
+- Email: Must be unique (optional)
+- Preferred language: ar or en (optional, defaults to ar)
+
 ### Social Login
 
 #### Google/Apple/Facebook Login
@@ -405,6 +458,81 @@ Authorization: Bearer {token}
 
 ## Trains API
 
+### Search Trains
+```
+POST /trains/search
+```
+
+**Request:**
+```json
+{
+    "departure_station_id": 53,
+    "arrival_station_id": 8,
+    "train_type_id": 2
+}
+```
+
+**Query Parameters:**
+- `departure_station_id` (required): Starting station ID
+- `arrival_station_id` (required): Destination station ID
+- `train_type_id` (optional): Train type ID for filtering
+
+**Response (200):**
+```json
+{
+    "status": "success",
+    "data": {
+        "available_trains": [
+            {
+                "train_id": 1,
+                "train_number": "389",
+                "train_name": {
+                    "ar": "قطار 389 (مطور)",
+                    "en": "Train 389 (Improved)"
+                },
+                "train_type": {
+                    "id": 2,
+                    "name": {
+                        "ar": "مطور",
+                        "en": "Improved"
+                    },
+                    "description": null
+                },
+                "departure": {
+                    "station_id": 53,
+                    "station_name": "Cairo",
+                    "time": "14:25:00",
+                    "platform": "Platform 3"
+                },
+                "arrival": {
+                    "station_id": 8,
+                    "station_name": "Alexandria",
+                    "time": "18:45:00",
+                    "platform": "Platform 5"
+                },
+                "trip_duration": "4h 20m",
+                "stops_between": 12,
+                "total_stops": 14,
+                "amenities": ["seats", "luggage_storage"],
+                "capacity": 400
+            }
+        ],
+        "count": 5,
+        "search_criteria": {
+            "departure_station_id": 53,
+            "arrival_station_id": 8,
+            "train_type_id": 2
+        }
+    }
+}
+```
+
+**Business Rules:**
+- Returns trains that have both stations in their route
+- Validates that departure station comes before arrival station
+- Filters by train type if provided
+- Results sorted by departure time
+
 ### Get All Trains
 ```
 GET /trains?page=1&per_page=20&status=active&search=cairo
@@ -517,7 +645,7 @@ GET /trains/{id}
 }
 ```
 
-### Get Train Schedule (Stops)
+### Get Train Schedule (Complete Journey)
 ```
 GET /trains/{id}/schedule
 ```
@@ -527,8 +655,30 @@ GET /trains/{id}/schedule
 {
     "status": "success",
     "data": {
-        "train_id": 1,
-        "stops": [
+        "train": {
+            "id": 1,
+            "number": "389",
+            "name": {
+                "ar": "قطار 389 (مطور)",
+                "en": "Train 389 (Improved)"
+            },
+            "train_type": {
+                "id": 2,
+                "name": {
+                    "ar": "مطور",
+                    "en": "Improved"
+                },
+                "description": null
+            },
+            "status": "active",
+            "operator": {
+                "ar": "السكك الحديدية المصرية",
+                "en": "Egyptian National Railways"
+            },
+            "amenities": ["seats", "luggage_storage"],
+            "capacity": 400
+        },
+        "schedule": [
             {
                 "stop_number": 1,
                 "station": {
@@ -574,10 +724,42 @@ GET /trains/{id}/schedule
                 "is_major_stop": false,
                 "notes": null
             }
-        ]
+        ],
+        "journey_summary": {
+            "origin": {
+                "station_name": "Cairo",
+                "departure_time": "14:25:00"
+            },
+            "destination": {
+                "station_name": "Alexandria",
+                "arrival_time": "18:45:00"
+            },
+            "total_stops": 14,
+            "major_stops": 3,
+            "estimated_duration": "4h 20m"
+        }
     }
 }
 ```
+
+### Get Train Schedule (Journey Segment)
+```
+GET /trains/{id}/schedule?departure_station_id=53&arrival_station_id=8
+```
+
+**Use Case:** When user clicks on a train from search results, show only the relevant portion of their journey.
+
+**Query Parameters:**
+- `departure_station_id` (optional): Starting station ID
+- `arrival_station_id` (optional): Ending station ID
+
+**Behavior:**
+- If both station IDs provided: Shows only stops from departure to arrival station
+- If neither provided: Shows complete journey (all stops)
+- Validates that departure comes before arrival in train's route
+
+**Response (200):**
+Same structure as complete schedule, but `schedule` array contains only the journey segment between specified stations.
 
 ### Get Train Live Location
 ```

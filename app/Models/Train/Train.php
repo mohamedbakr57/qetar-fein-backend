@@ -11,6 +11,7 @@ class Train extends Model
     use HasFactory, HasTranslations;
 
     protected $fillable = [
+        'train_type_id',
         'number',
         'name',
         'description',
@@ -33,6 +34,11 @@ class Train extends Model
     ];
 
     // Relationships according to business rules
+    public function trainType()
+    {
+        return $this->belongsTo(TrainType::class, 'train_type_id');
+    }
+
     public function stops()
     {
         return $this->hasMany(\App\Models\Train\Stop::class)->orderBy('stop_number');

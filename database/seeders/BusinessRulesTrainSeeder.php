@@ -139,14 +139,26 @@ class BusinessRulesTrainSeeder extends Seeder
     {
         $this->command->info('Importing trains from JSON...');
 
+        // Build train type mapping
+        $trainTypeMapping = [];
+        $trainTypes = DB::table('train_types')->get();
+        foreach ($trainTypes as $type) {
+            $nameData = json_decode($type->name, true);
+            $trainTypeMapping[$nameData['en']] = $type->id;
+        }
+
         $trainData = [];
         foreach ($trainsJson as $index => $train) {
             $trainId = $index + 1;
             $trainNumber = $train['number'];
-            $trainType = $train['type'] ?? 'passenger';
+            $trainType = $train['type'] ?? 'Passengers';
+
+            // Map train type string to train_type_id
+            $trainTypeId = $trainTypeMapping[$trainType] ?? $trainTypeMapping['Passengers'] ?? null;
 
             $trainData[] = [
                 'id' => $trainId,
+                'train_type_id' => $trainTypeId,
                 'number' => $trainNumber,
                 'name' => json_encode([
                     'en' => 'Train ' . $trainNumber . ' (' . $trainType . ')',

@@ -88,20 +88,144 @@ class TrainController extends Controller
         ], 'success', 200);
     }
 
+    public function search(Request $request): JsonResponse
+    {
+        $request->validate([
+            'departure_station_id' => 'required|integer|exists:stations,id',
+            'arrival_station_id' => 'required|integer|exists:stations,id',
+            'train_type_id' => 'nullable|integer|exists:train_types,id'
+        ]);
+
+        $departureStationId = $request->departure_station_id;
+        $arrivalStationId = $request->arrival_station_id;
+        $trainTypeId = $request->train_type_id;
+
+        // Find trains that have both stations in their route
+        $query = Train::whereHas('stops', function($q) use ($departureStationId) {
+            $q->where('station_id', $departureStationId);
+        })->whereHas('stops', function($q) use ($arrivalStationId) {
+            $q->where('station_id', $arrivalStationId);
+        });
+
+        // Apply train type filter if provided
+        if ($trainTypeId) {
+            $query->where('train_type_id', $trainTypeId);
+        }
+
+        $trains = $query->with(['stops' => function($q) {
+            $q->orderBy('stop_number');
+        }, 'stops.station', 'trainType'])->get();
+
+        // Filter trains where departure comes before arrival and format results
+        $availableTrains = [];
+        foreach ($trains as $train) {
+            $departureStop = $train->stops->firstWhere('station_id', $departureStationId);
+            $arrivalStop = $train->stops->firstWhere('station_id', $arrivalStationId);
+
+            // Check if departure stop comes before arrival stop
+            if ($departureStop && $arrivalStop && $departureStop->stop_number < $arrivalStop->stop_number) {
+                // Calculate stops between departure and arrival
+                $stopsBetween = $train->stops->filter(function($stop) use ($departureStop, $arrivalStop) {
+                    return $stop->stop_number > $departureStop->stop_number &&
+                           $stop->stop_number < $arrivalStop->stop_number;
+                })->count();
+
+                // Calculate trip duration
+                $tripDuration = $this->calculateTripDuration(
+                    $departureStop->departure_time,
+                    $arrivalStop->arrival_time
+                );
+
+                $availableTrains[] = [
+                    'train_id' => $train->id,
+                    'train_number' => $train->number,
+                    'train_name' => $train->name,
+                    'train_type' => $train->trainType ? [
+                        'id' => $train->trainType->id,
+                        'name' => $train->trainType->name,
+                        'description' => $train->trainType->description ?? null
+                    ] : null,
+                    'departure' => [
+                        'station_id' => $departureStop->station_id,
+                        'station_name' => $this->getStationName($departureStop->station),
+                        'time' => $departureStop->departure_time,
+                        'platform' => $departureStop->platform
+                    ],
+                    'arrival' => [
+                        'station_id' => $arrivalStop->station_id,
+                        'station_name' => $this->getStationName($arrivalStop->station),
+                        'time' => $arrivalStop->arrival_time,
+                        'platform' => $arrivalStop->platform
+                    ],
+                    'trip_duration' => $tripDuration,
+                    'stops_between' => $stopsBetween,
+                    'total_stops' => $stopsBetween + 2,
+                    'amenities' => $train->amenities,
+                    'capacity' => $train->capacity
+                ];
+            }
+        }
+
+        // Sort by departure time
+        usort($availableTrains, function($a, $b) {
+            return strcmp($a['departure']['time'], $b['departure']['time']);
+        });
+
+        return $this->apiResponse([
+            'available_trains' => $availableTrains,
+            'count' => count($availableTrains),
+            'search_criteria' => [
+                'departure_station_id' => $departureStationId,
+                'arrival_station_id' => $arrivalStationId,
+                'train_type_id' => $trainTypeId
+            ]
+        ], 'success', 200);
+    }
+
     public function schedule(int $id, Request $request): JsonResponse
     {
-        $train = Train::with(['stops.station'])->find($id);
+        $request->validate([
+            'departure_station_id' => 'nullable|integer|exists:stations,id',
+            'arrival_station_id' => 'nullable|integer|exists:stations,id'
+        ]);
+
+        $train = Train::with(['stops' => function($q) {
+            $q->orderBy('stop_number');
+        }, 'stops.station', 'trainType'])->find($id);
 
         if (!$train) {
             return $this->errorResponse('Train not found', 404);
         }
 
-        // Format complete journey schedule
-        $schedule = $train->stops->map(function($stop) {
+        $departureStationId = $request->departure_station_id;
+        $arrivalStationId = $request->arrival_station_id;
+
+        // If both stations provided, show only the segment
+        if ($departureStationId && $arrivalStationId) {
+            $departureStop = $train->stops->firstWhere('station_id', $departureStationId);
+            $arrivalStop = $train->stops->firstWhere('station_id', $arrivalStationId);
+
+            if (!$departureStop || !$arrivalStop || $departureStop->stop_number >= $arrivalStop->stop_number) {
+                return $this->errorResponse('Invalid station combination for this train', 400);
+            }
+
+            // Filter stops to show only the journey segment
+            $schedule = $train->stops->filter(function($stop) use ($departureStop, $arrivalStop) {
+                return $stop->stop_number >= $departureStop->stop_number &&
+                       $stop->stop_number <= $arrivalStop->stop_number;
+            });
+        } else {
+            // Show complete journey
+            $schedule = $train->stops;
+        }
+
+        // Format schedule
+        $formattedSchedule = $schedule->map(function($stop) {
             return [
                 'stop_number' => $stop->stop_number,
                 'station_id' => $stop->station->id,
                 'station_name' => $this->getStationName($stop->station),
+                'station_code' => $stop->station->code,
                 'arrival_time' => $stop->arrival_time,
                 'departure_time' => $stop->departure_time,
                 'platform' => $stop->platform,
@@ -109,21 +233,36 @@ class TrainController extends Controller
                 'is_major_stop' => $stop->is_major_stop,
                 'notes' => $stop->notes
             ];
-        });
+        })->values();
 
         return $this->apiResponse([
             'train' => [
                 'id' => $train->id,
                 'number' => $train->number,
                 'name' => $train->name,
-                'type' => $train->type,
-                'status' => $train->status
+                'train_type' => $train->trainType ? [
+                    'id' => $train->trainType->id,
+                    'name' => $train->trainType->name,
+                    'description' => $train->trainType->description ?? null
+                ] : null,
+                'status' => $train->status,
+                'operator' => $train->operator,
+                'amenities' => $train->amenities,
+                'capacity' => $train->capacity
             ],
-            'schedule' => $schedule,
+            'schedule' => $formattedSchedule,
             'journey_summary' => [
-                'total_stops' => $schedule->count(),
-                'major_stops' => $schedule->where('is_major_stop', true)->count(),
-                'estimated_duration' => $this->calculateJourneyDuration($schedule)
+                'origin' => [
+                    'station_name' => $this->getStationName($formattedSchedule->first()['station_id'] ? Station::find($formattedSchedule->first()['station_id']) : null),
+                    'departure_time' => $formattedSchedule->first()['departure_time'] ?? null
+                ],
+                'destination' => [
+                    'station_name' => $this->getStationName($formattedSchedule->last()['station_id'] ? Station::find($formattedSchedule->last()['station_id']) : null),
+                    'arrival_time' => $formattedSchedule->last()['arrival_time'] ?? null
+                ],
+                'total_stops' => $formattedSchedule->count(),
+                'major_stops' => $formattedSchedule->where('is_major_stop', true)->count(),
+                'estimated_duration' => $this->calculateJourneyDuration($formattedSchedule)
             ]
         ], 'success', 200);
     }
@@ -289,6 +428,25 @@ class TrainController extends Controller
 
         $start = Carbon::parse($firstStop['departure_time']);
         $end = Carbon::parse($lastStop['arrival_time']);
+
+        $diffInMinutes = $start->diffInMinutes($end);
+        $hours = intval($diffInMinutes / 60);
+        $minutes = $diffInMinutes % 60;
+
+        return $hours > 0 ? "{$hours}h {$minutes}m" : "{$minutes}m";
+    }
+
+    /**
+     * Calculate trip duration between two times
+     */
+    private function calculateTripDuration(?string $departureTime, ?string $arrivalTime): ?string
+    {
+        if (!$departureTime || !$arrivalTime) {
+            return null;
+        }
+
+        $start = Carbon::parse($departureTime);
+        $end = Carbon::parse($arrivalTime);
 
         $diffInMinutes = $start->diffInMinutes($end);
         $hours = intval($diffInMinutes / 60);

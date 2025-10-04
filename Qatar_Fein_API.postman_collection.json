@@ -110,6 +110,69 @@
 					}
 				},
 				{
+					"name": "Complete Registration",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.data && response.data.token) {",
+									"        pm.environment.set('auth_token', response.data.token);",
+									"        console.log('Auth token saved to environment');",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Accept-Language",
+								"value": "ar",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone\": \"01011761786\",\n    \"name\": \"Ahmed Mohamed\",\n    \"password\": \"password123\",\n    \"password_confirmation\": \"password123\",\n    \"email\": \"ahmed@example.com\",\n    \"preferred_language\": \"ar\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/register/complete",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"register",
+								"complete"
+							]
+						},
+						"description": "Complete user registration after OTP verification.\n\n**Required Fields:**\n- phone: Egyptian phone number (11 digits starting with 010, 011, 012, or 015)\n- name: User's full name (3-255 characters)\n- password: Password (minimum 8 characters)\n- password_confirmation: Must match password\n\n**Optional Fields:**\n- email: Valid email address (must be unique)\n- preferred_language: ar or en (defaults to ar)\n\n**Important:**\n- Phone must be verified via OTP within the last 10 minutes\n- Phone verification is checked before registration\n\n**Response:**\n- Success: User data + Bearer token (auto-saved to environment)\n- Error: Validation errors or phone not verified"
+					}
+				},
+				{
 					"name": "Social Login - Google",
 					"event": [
 						{
@@ -281,6 +344,51 @@
 			"name": "Trains",
 			"item": [
 				{
+					"name": "Search Trains",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Accept-Language",
+								"value": "ar",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"departure_station_id\": 53,\n    \"arrival_station_id\": 8,\n    \"train_type_id\": 2\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/trains/search",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"trains",
+								"search"
+							]
+						},
+						"description": "Search for trains between two stations with optional train type filter.\n\n**Authentication:** Not required (public endpoint)\n\n**Required Fields:**\n- departure_station_id: Station ID where journey begins\n- arrival_station_id: Station ID where journey ends\n\n**Optional Fields:**\n- train_type_id: Train type ID for filtering (see train_types table)\n\n**Response:**\n- Array of available trains with:\n  - Train details (number, name, type)\n  - Departure and arrival info (station, time, platform)\n  - Trip duration (e.g., \"4h 20m\")\n  - Number of stops between departure and arrival\n  - Amenities and capacity\n- Total count of available trains\n- Search criteria used"
+					}
+				},
+				{
 					"name": "Get All Trains",
 					"request": {
 						"method": "GET",
@@ -359,7 +467,7 @@
 					}
 				},
 				{
-					"name": "Get Train Schedule",
+					"name": "Get Train Schedule (Full)",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -387,7 +495,51 @@
 								"schedule"
 							]
 						},
-						"description": "Get train schedule (stop sequence) for a specific train.\n\n**Authentication:** Not required (public endpoint)\n\n**Path Parameters:**\n- id: Train ID (required)\n\n**Response:**\n- Ordered list of stops with:\n  - Station information (bilingual names)\n  - Arrival and departure times\n  - Stop sequence number\n  - Platform information\n  - Stop duration"
+						"description": "Get complete train schedule from origin to final destination.\n\n**Authentication:** Not required (public endpoint)\n\n**Path Parameters:**\n- id: Train ID (required)\n\n**Response:**\n- Complete ordered list of all stops with:\n  - Station information (bilingual names, codes)\n  - Arrival and departure times\n  - Stop sequence number\n  - Platform information\n  - Stop duration\n  - Is major stop flag\n- Journey summary with origin, destination, total stops, duration"
+					}
+				},
+				{
+					"name": "Get Train Schedule (Segment)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Accept-Language",
+								"value": "ar",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/trains/1/schedule?departure_station_id=53&arrival_station_id=8",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"trains",
+								"1",
+								"schedule"
+							],
+							"query": [
+								{
+									"key": "departure_station_id",
+									"value": "53",
+									"description": "Departure station ID (optional)"
+								},
+								{
+									"key": "arrival_station_id",
+									"value": "8",
+									"description": "Arrival station ID (optional)"
+								}
+							]
+						},
+						"description": "Get train schedule for a specific journey segment (e.g., from Cairo to Alexandria).\n\n**Use Case:** When user clicks on a train from search results, show only the relevant portion of the journey.\n\n**Authentication:** Not required (public endpoint)\n\n**Path Parameters:**\n- id: Train ID (required)\n\n**Query Parameters:**\n- departure_station_id: Starting station ID (optional)\n- arrival_station_id: Ending station ID (optional)\n\n**Behavior:**\n- If both station IDs provided: Shows only stops from departure to arrival station\n- If neither provided: Shows complete journey (all stops)\n- Validates that departure comes before arrival in train's route\n\n**Response:**\n- Filtered list of stops for the journey segment\n- All intermediate stops included\n- Journey summary adjusted for the segment\n- Same detailed information as full schedule"
 					}
 				},
 				{

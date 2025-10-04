@@ -24,6 +24,7 @@ Route::prefix('v1')->group(function () {
 
         // Trains
         Route::get('/trains', [App\Http\Controllers\API\V1\TrainController::class, 'index']);
+        Route::post('/trains/search', [App\Http\Controllers\API\V1\TrainController::class, 'search']);
         Route::get('/trains/{id}', [App\Http\Controllers\API\V1\TrainController::class, 'show']);
         Route::get('/trains/{id}/schedule', [App\Http\Controllers\API\V1\TrainController::class, 'schedule']);
         Route::get('/trains/{id}/location', [App\Http\Controllers\API\V1\TrainController::class, 'location']);
