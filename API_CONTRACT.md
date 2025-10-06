@@ -177,7 +177,7 @@ FLAVOR=production   // for Release.xcconfig
 
 ## Authentication
 
-### Phone Number Verification Flow
+### Registration Flow (New Users Only)
 
 #### 1. Send OTP
 ```
@@ -187,7 +187,7 @@ POST /auth/phone/send-otp
 **Request:**
 ```json
 {
-    "phone": "+974123456789"
+    "phone": "01011761786"
 }
 ```
 
@@ -195,10 +195,7 @@ POST /auth/phone/send-otp
 ```json
 {
     "status": "success",
-    "message": {
-        "ar": "تم إرسال رمز التحقق إلى هاتفك",
-        "en": "OTP sent to your phone"
-    },
+    "message": "OTP sent successfully",
     "data": {
         "expires_in": 300
     }
@@ -206,12 +203,12 @@ POST /auth/phone/send-otp
 ```
 
 **Business Rules:**
-- Phone must be in international format (+974xxxxxxxx)
+- Phone: Egyptian format (11 digits starting with 010, 011, 012, or 015)
 - Rate limit: 3 attempts per hour per phone
 - OTP expires in 5 minutes
 - OTP code is 6 digits
 
-#### 2. Verify OTP
+#### 2. Verify OTP (Registration)
 ```
 POST /auth/phone/verify
 ```
@@ -219,35 +216,33 @@ POST /auth/phone/verify
 **Request:**
 ```json
 {
-    "phone": "+974123456789",
+    "phone": "01011761786",
     "otp_code": "123456"
 }
 ```
 
-**Response (200):**
+**Response for New User (200):**
 ```json
 {
     "status": "success",
-    "message": {
-        "ar": "تم التحقق بنجاح",
-        "en": "Verification successful"
-    },
+    "message": "Phone verified. Please complete your registration.",
     "data": {
-        "user": {
-            "id": 1,
-            "phone": "+974123456789",
-            "name": null,
-            "email": null,
-            "avatar": null,
-            "preferred_language": "ar",
-            "reward_points": 0,
-            "total_assignments": 0,
-            "successful_assignments": 0,
-            "ad_free_until": null,
-            "created_at": "2024-01-15T10:30:00Z"
-        },
-        "token": "1|eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-        "expires_at": "2024-02-15T10:30:00Z"
+        "phone": "01011761786",
+        "verified": true,
+        "is_new_user": true
+    }
+}
+```
+
+**Response for Existing User (200):**
+```json
+{
+    "status": "success",
+    "message": "Phone verified successfully. You can now reset your password.",
+    "data": {
+        "phone": "01011761786",
+        "verified": true,
+        "is_new_user": false
     }
 }
 ```
@@ -269,14 +264,11 @@ POST /auth/register/complete
 }
 ```
 
-**Response (200):**
+**Response (201):**
 ```json
 {
     "status": "success",
-    "message": {
-        "ar": "تم إكمال التسجيل بنجاح",
-        "en": "Registration completed successfully"
-    },
+    "message": "Registration completed successfully",
     "data": {
         "user": {
             "id": 1,
@@ -286,13 +278,10 @@ POST /auth/register/complete
             "avatar": null,
             "preferred_language": "ar",
             "reward_points": 0,
-            "total_assignments": 0,
-            "successful_assignments": 0,
-            "ad_free_until": null,
-            "created_at": "2024-01-15T10:30:00Z"
+            "ad_free_until": null
         },
         "token": "1|eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-        "expires_at": "2024-02-15T10:30:00Z"
+        "token_type": "Bearer"
     }
 }
 ```
@@ -304,6 +293,98 @@ POST /auth/register/complete
 - Password: Minimum 8 characters
 - Email: Must be unique (optional)
 - Preferred language: ar or en (optional, defaults to ar)
+
+### Login Flow (Existing Users)
+
+#### Login with Phone & Password
+```
+POST /auth/login
+```
+
+**Request:**
+```json
+{
+    "phone": "01011761786",
+    "password": "password123"
+}
+```
+
+**Response (200):**
+```json
+{
+    "status": "success",
+    "message": "Login successful",
+    "data": {
+        "user": {
+            "id": 1,
+            "phone": "01011761786",
+            "name": "Ahmed Mohamed",
+            "email": "ahmed@example.com",
+            "avatar": null,
+            "preferred_language": "ar",
+            "reward_points": 150,
+            "ad_free_until": "2024-02-15T10:30:00Z"
+        },
+        "token": "1|eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+        "token_type": "Bearer"
+    }
+}
+```
+
+**Error Response (401):**
+```json
+{
+    "status": "error",
+    "message": "Invalid phone or password"
+}
+```
+
+**Business Rules:**
+- Use phone + password for regular login
+- OTP is NOT required for login
+- Account must be active
+
+### Password Reset Flow
+
+#### 1. Send OTP
+```
+POST /auth/phone/send-otp
+```
+Same as registration flow
+
+#### 2. Verify OTP
+```
+POST /auth/phone/verify
+```
+Returns `is_new_user: false` for existing users
+
+#### 3. Reset Password
+```
+POST /auth/password/reset
+```
+
+**Request:**
+```json
+{
+    "phone": "01011761786",
+    "password": "newpassword123",
+    "password_confirmation": "newpassword123"
+}
+```
+
+**Response (200):**
+```json
+{
+    "status": "success",
+    "message": "Password reset successfully. You can now login with your new password.",
+    "data": null
+}
+```
+
+**Business Rules:**
+- Phone must be verified via OTP within the last 10 minutes
+- Password: Minimum 8 characters
+- After reset, user must login with new password
 
 ### Social Login
 

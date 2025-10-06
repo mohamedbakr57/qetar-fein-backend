@@ -11,6 +11,7 @@ use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -53,6 +54,45 @@ class AuthController extends Controller
         return $this->errorResponse('Failed to send OTP. Please try again.', 500);
     }
 
+    public function login(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'phone' => 'required|string|regex:/^01[0125][0-9]{8}$/',
+            'password' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->errorResponse('Invalid input', 422, $validator->errors());
+        }
+
+        $user = User::where('phone', $request->phone)->first();
+
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return $this->errorResponse('Invalid phone or password', 401);
+        }
+
+        if ($user->status !== 'active') {
+            return $this->errorResponse('Your account is not active', 403);
+        }
+
+        $token = $user->createToken('mobile-app')->plainTextToken;
+
+        return $this->apiResponse([
+            'user' => [
+                'id' => $user->id,
+                'phone' => $user->phone,
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
+                'preferred_language' => $user->preferred_language,
+                'ad_free_until' => $user->ad_free_until,
+                'reward_points' => $user->reward_points,
+            ],
+            'token' => $token,
+            'token_type' => 'Bearer'
+        ], 'Login successful', 200);
+    }
+
     public function verifyOtp(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -74,25 +114,14 @@ class AuthController extends Controller
         $user = User::where('phone', $request->phone)->first();
 
         if ($user) {
-            // Existing user - login
+            // Existing user - only verify phone, don't login (they should use password login)
             $user->update(['phone_verified_at' => now()]);
-            $token = $user->createToken('mobile-app')->plainTextToken;
 
             return $this->apiResponse([
-                'user' => [
-                    'id' => $user->id,
-                    'phone' => $user->phone,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'avatar' => $user->avatar,
-                    'preferred_language' => $user->preferred_language,
-                    'ad_free_until' => $user->ad_free_until,
-                    'reward_points' => $user->reward_points,
-                ],
-                'token' => $token,
-                'token_type' => 'Bearer',
+                'phone' => $request->phone,
+                'verified' => true,
                 'is_new_user' => false
-            ], 'Phone verified successfully', 200);
+            ], 'Phone verified successfully. You can now reset your password.', 200);
         }
 
         // New user - return verification token for registration
@@ -147,7 +176,7 @@ class AuthController extends Controller
                 'phone' => $user->phone,
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar,
+                'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
                 'preferred_language' => $user->preferred_language,
                 'ad_free_until' => $user->ad_free_until,
                 'reward_points' => $user->reward_points,
@@ -216,7 +245,7 @@ class AuthController extends Controller
                 'phone' => $user->phone,
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar,
+                'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
                 'preferred_language' => $user->preferred_language,
                 'ad_free_until' => $user->ad_free_until,
                 'reward_points' => $user->reward_points,
@@ -224,6 +253,38 @@ class AuthController extends Controller
             'token' => $token,
             'token_type' => 'Bearer'
         ], 'Social login successful', 200);
+    }
+
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'phone' => 'required|string|regex:/^01[0125][0-9]{8}$/',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->errorResponse('Invalid input', 422, $validator->errors());
+        }
+
+        // Verify that OTP was verified for this phone recently (within 10 minutes)
+        $recentVerification = OtpVerification::where('phone', $request->phone)
+            ->where('verified_at', '!=', null)
+            ->where('verified_at', '>', now()->subMinutes(10))
+            ->first();
+
+        if (!$recentVerification) {
+            return $this->errorResponse('Phone verification expired. Please verify your phone again.', 400);
+        }
+
+        $user = User::where('phone', $request->phone)->first();
+
+        if (!$user) {
+            return $this->errorResponse('User not found', 404);
+        }
+
+        $user->update(['password' => Hash::make($request->password)]);
+
+        return $this->apiResponse(null, 'Password reset successfully. You can now login with your new password.', 200);
     }
 
     public function logout(Request $request): JsonResponse
@@ -243,7 +304,7 @@ class AuthController extends Controller
                 'phone' => $user->phone,
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar,
+                'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
                 'preferred_language' => $user->preferred_language,
                 'ad_free_until' => $user->ad_free_until,
                 'reward_points' => $user->reward_points,
@@ -269,11 +330,17 @@ class AuthController extends Controller
         $updateData = $request->only(['name', 'email', 'preferred_language']);
 
         if ($request->hasFile('avatar')) {
+            // Delete old avatar if exists
+            if ($user->avatar && \Storage::disk('public')->exists($user->avatar)) {
+                \Storage::disk('public')->delete($user->avatar);
+            }
+
             $avatarPath = $request->file('avatar')->store('avatars', 'public');
             $updateData['avatar'] = $avatarPath;
         }
 
         $user->update($updateData);
+        $user->refresh();
 
         return $this->apiResponse([
             'user' => [
@@ -281,7 +348,7 @@ class AuthController extends Controller
                 'phone' => $user->phone,
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar,
+                'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
                 'preferred_language' => $user->preferred_language,
                 'ad_free_until' => $user->ad_free_until,
                 'reward_points' => $user->reward_points,

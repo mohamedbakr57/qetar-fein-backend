@@ -28,7 +28,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"phone\": \"+974123456789\"\n}",
+							"raw": "{\n    \"phone\": \"01011761786\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -48,11 +48,52 @@
 								"send-otp"
 							]
 						},
-						"description": "Send OTP code to phone number for verification.\n\n**Required Fields:**\n- phone: Phone number in international format (+974xxxxxxxxx)\n\n**Rate Limiting:**\n- Max 3 attempts per hour per phone number\n- OTP expires in 5 minutes\n\n**Response:**\n- Success: OTP sent message\n- Error: Validation errors or rate limit exceeded"
+						"description": "Send OTP code to phone number for verification.\n\n**Required Fields:**\n- phone: Egyptian phone number (11 digits starting with 010, 011, 012, or 015)\n\n**Rate Limiting:**\n- Max 3 attempts per hour per phone number\n- OTP expires in 5 minutes\n\n**Response:**\n- Success: OTP sent message\n- Error: Validation errors or rate limit exceeded"
 					}
 				},
 				{
 					"name": "Verify OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Accept-Language",
+								"value": "ar",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone\": \"01011761786\",\n    \"otp_code\": \"123456\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/phone/verify",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"phone",
+								"verify"
+							]
+						},
+						"description": "Verify OTP code sent to phone number.\n\n**Required Fields:**\n- phone: Phone number used for OTP\n- otp_code: 6-digit OTP code received\n\n**Response for New Users (is_new_user: true):**\n- Proceed to Complete Registration endpoint\n- Phone verification valid for 10 minutes\n\n**Response for Existing Users (is_new_user: false):**\n- Can proceed to Login endpoint\n- Or use Reset Password if needed\n- Phone verification valid for 10 minutes\n\n**Note:** Does NOT auto-login. Use Login endpoint for existing users or Complete Registration for new users."
+					}
+				},
+				{
+					"name": "Login",
 					"event": [
 						{
 							"listen": "test",
@@ -86,7 +127,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"phone\": \"+974123456789\",\n    \"otp_code\": \"123456\"\n}",
+							"raw": "{\n    \"phone\": \"01011761786\",\n    \"password\": \"password123\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -94,7 +135,7 @@
 							}
 						},
 						"url": {
-							"raw": "{{base_url}}/api/v1/auth/phone/verify",
+							"raw": "{{base_url}}/api/v1/auth/login",
 							"host": [
 								"{{base_url}}"
 							],
@@ -102,11 +143,10 @@
 								"api",
 								"v1",
 								"auth",
-								"phone",
-								"verify"
+								"login"
 							]
 						},
-						"description": "Verify OTP code and authenticate user.\n\n**Required Fields:**\n- phone: Phone number used for OTP\n- otp_code: 6-digit OTP code received\n\n**Response:**\n- Success: User data + Bearer token (auto-saved to environment)\n- Error: Invalid OTP or expired code\n\n**Auto-creates user account if first time login**"
+						"description": "Login with phone and password for existing users. No OTP required for regular login.\n\n**Required Fields:**\n- phone: Egyptian phone number (11 digits)\n- password: User password\n\n**Response:**\n- Success: User data + Bearer token (auto-saved to environment)\n- Error: Invalid credentials\n\n**Note:** For first-time users, use OTP verification flow instead."
 					}
 				},
 				{
@@ -170,6 +210,52 @@
 							]
 						},
 						"description": "Complete user registration after OTP verification.\n\n**Required Fields:**\n- phone: Egyptian phone number (11 digits starting with 010, 011, 012, or 015)\n- name: User's full name (3-255 characters)\n- password: Password (minimum 8 characters)\n- password_confirmation: Must match password\n\n**Optional Fields:**\n- email: Valid email address (must be unique)\n- preferred_language: ar or en (defaults to ar)\n\n**Important:**\n- Phone must be verified via OTP within the last 10 minutes\n- Phone verification is checked before registration\n\n**Response:**\n- Success: User data + Bearer token (auto-saved to environment)\n- Error: Validation errors or phone not verified"
+					}
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Accept-Language",
+								"value": "ar",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone\": \"01011761786\",\n    \"password\": \"newpassword123\",\n    \"password_confirmation\": \"newpassword123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/password/reset",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"password",
+								"reset"
+							]
+						},
+						"description": "Reset password after OTP verification. Phone must be verified within last 10 minutes.\n\n**Required Fields:**\n- phone: Egyptian phone number (11 digits)\n- password: New password (minimum 8 characters)\n- password_confirmation: Must match password\n\n**Important:**\n- Phone must be verified via OTP within the last 10 minutes\n- User must already exist in the system\n- Use this endpoint for existing users who forgot their password\n\n**Response:**\n- Success: Password reset confirmation\n- Error: Validation errors or phone not verified\n\n**Note:** After password reset, use the Login endpoint to authenticate."
 					}
 				},
 				{

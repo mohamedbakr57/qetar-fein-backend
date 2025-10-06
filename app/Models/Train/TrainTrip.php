@@ -12,7 +12,7 @@ class TrainTrip extends Model
     use HasFactory;
 
     protected $fillable = [
-        'schedule_id',
+        'train_id',
         'trip_date',
         'actual_departure_time',
         'actual_arrival_time',
@@ -20,13 +20,13 @@ class TrainTrip extends Model
         'estimated_arrival_time',
         'delay_minutes',
         'current_station_id',
+        'next_station_id',
         'current_latitude',
         'current_longitude',
         'speed_kmh',
-        'heading',
         'status',
         'passenger_count',
-        'notes',
+        'last_location_update',
     ];
 
     protected $casts = [
@@ -43,14 +43,19 @@ class TrainTrip extends Model
         'passenger_count' => 'integer',
     ];
 
-    public function schedule(): BelongsTo
+    public function train(): BelongsTo
     {
-        return $this->belongsTo(Schedule::class);
+        return $this->belongsTo(Train::class);
     }
 
     public function currentStation(): BelongsTo
     {
         return $this->belongsTo(Station::class, 'current_station_id');
+    }
+
+    public function nextStation(): BelongsTo
+    {
+        return $this->belongsTo(Station::class, 'next_station_id');
     }
 
     public function passengerAssignments(): HasMany
