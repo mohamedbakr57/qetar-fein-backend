@@ -1,107 +1,82 @@
-# Qatar Fein Mobile App - API Contract
+# Qetar Fein Mobile App - API Contract
 
 ## Overview
-This document defines the complete API contract for the Qatar Fein mobile application. The backend follows Egyptian National Railways business rules with Train → Stops → Station structure.
+This document defines the complete API contract for the Qetar Fein mobile application. The backend follows Egyptian National Railways business rules with Train → Stops → Station structure.
 
 **Authentication:** Bearer Token (Laravel Sanctum)
 **Default Language:** Arabic (ar)
 **Content-Type:** `application/json`
+**Production API:** `https://qetar.elbenaa.com/api/v1`
 
-### Environment Configuration
-The API base URL changes based on the environment. Configure your Flutter app to handle these dynamically:
+### Simplified Configuration
+The app uses a single production-only configuration for simplicity:
 
 ```dart
-// lib/config/api_config.dart
-import 'dart:io';
-import 'package:flutter/foundation.dart';
-
+// lib/core/config/api_config.dart
 class ApiConfig {
-  static const String _devBaseUrl = 'http://10.0.2.2:8000/api/v1';  // Android Emulator
-  static const String _devBaseUrlIOS = 'http://localhost:8000/api/v1'; // iOS Simulator
-  static const String _stagingBaseUrl = 'https://staging-api.qatarfein.com/api/v1';
-  static const String _prodBaseUrl = 'https://api.qatarfein.com/api/v1';
+  // Base URL - Production only
+  static const String baseUrl = 'https://qetar.elbenaa.com/api/v1';
 
-  static const String _devWebSocketUrl = 'ws://10.0.2.2:8080';
-  static const String _devWebSocketUrlIOS = 'ws://localhost:8080';
-  static const String _stagingWebSocketUrl = 'wss://staging-ws.qatarfein.com';
-  static const String _prodWebSocketUrl = 'wss://ws.qatarfein.com';
+  // WebSocket URL
+  static const String webSocketUrl = 'wss://qetar.elbenaa.com';
 
   // Reverb configuration
-  static const String reverbAppKey = 'qatar-fein-key-2024';
-  static const String reverbAppId = 'qatar-fein-app';
+  static const String reverbAppKey = 'qetarfein-key';
+  static const String reverbHost = 'qetar.elbenaa.com';
+  static const int reverbPort = 443;
+  static const String reverbScheme = 'https';
 
-  static String get baseUrl {
-    switch (Environment.current) {
-      case AppEnvironment.development:
-        return Platform.isIOS ? _devBaseUrlIOS : _devBaseUrl;
-      case AppEnvironment.staging:
-        return _stagingBaseUrl;
-      case AppEnvironment.production:
-        return _prodBaseUrl;
-    }
-  }
+  // Feature flags
+  static const bool enableLogging = false;
+  static const bool enableDebugMode = false;
 
-  static String get webSocketUrl {
-    switch (Environment.current) {
-      case AppEnvironment.development:
-        return Platform.isIOS ? _devWebSocketUrlIOS : _devWebSocketUrl;
-      case AppEnvironment.staging:
-        return _stagingWebSocketUrl;
-      case AppEnvironment.production:
-        return _prodWebSocketUrl;
-    }
-  }
+  // Timeouts (in milliseconds)
+  static const int connectTimeout = 30000;
+  static const int receiveTimeout = 30000;
+  static const int sendTimeout = 30000;
 
-  static bool get isDevelopment => Environment.current == AppEnvironment.development;
-  static bool get isProduction => Environment.current == AppEnvironment.production;
-  static bool get isStaging => Environment.current == AppEnvironment.staging;
+  // API endpoints
+  static const String authEndpoint = '/auth';
+  static const String trainsEndpoint = '/trains';
+  static const String stationsEndpoint = '/stations';
+  static const String assignmentsEndpoint = '/assignments';
+  static const String communitiesEndpoint = '/communities';
+  static const String rewardsEndpoint = '/rewards';
+  static const String notificationsEndpoint = '/notifications';
 
-  // API timeouts
-  static const Duration connectTimeout = Duration(seconds: 30);
-  static const Duration receiveTimeout = Duration(seconds: 30);
-  static const Duration sendTimeout = Duration(seconds: 30);
+  // API Keys
+  static const String googleMapsApiKey = 'AIzaSyPROD_GOOGLE_MAPS_KEY';
+  static const String firebaseProjectId = 'qetarfein-prod';
 
-  // App configuration based on environment
-  static String get appName {
-    switch (Environment.current) {
-      case AppEnvironment.development:
-        return 'Qatar Fein (Dev)';
-      case AppEnvironment.staging:
-        return 'Qatar Fein (Staging)';
-      case AppEnvironment.production:
-        return 'Qatar Fein';
-    }
-  }
+  // Cache configuration
+  static const Duration cacheExpiry = Duration(minutes: 15);
+  static const int maxCacheSize = 50 * 1024 * 1024; // 50MB
 
-  static bool get enableLogging => isDevelopment || isStaging;
-}
+  // Pagination
+  static const int defaultPageSize = 20;
+  static const int maxPageSize = 100;
 
-enum AppEnvironment { development, staging, production }
+  // Location settings
+  static const double defaultLocationAccuracy = 100.0; // meters
+  static const Duration locationUpdateInterval = Duration(seconds: 30);
 
-class Environment {
-  static AppEnvironment? _current;
+  // Push notification topics
+  static const String generalNotificationsTopic = 'general';
+  static const String trainUpdatesNotificationsTopic = 'train_updates';
+  static const String emergencyNotificationsTopic = 'emergency';
 
-  static AppEnvironment get current {
-    if (_current != null) return _current!;
+  // Validation rules
+  static const int minPhoneNumberLength = 8;
+  static const int maxPhoneNumberLength = 15;
+  static const int otpLength = 6;
+  static const Duration otpExpiry = Duration(minutes: 5);
 
-    // Method 1: Using build flavors
-    const flavor = String.fromEnvironment('FLAVOR', defaultValue: 'development');
-    switch (flavor) {
-      case 'staging':
-        return AppEnvironment.staging;
-      case 'production':
-        return AppEnvironment.production;
-      default:
-        return AppEnvironment.development;
-    }
-
-    // Method 2: Using kDebugMode (alternative)
-    // return kDebugMode ? AppEnvironment.development : AppEnvironment.production;
-  }
-
-  static void initialize(AppEnvironment environment) {
-    _current = environment;
-  }
+  // App configuration
+  static const String appName = 'Qetar Fein';
+  static const String appVersion = '1.0.0';
+  static const String supportEmail = 'support@qetarfein.com';
+  static const String privacyPolicyUrl = 'https://qetarfein.com/privacy';
+  static const String termsOfServiceUrl = 'https://qetarfein.com/terms';
 }
 
 // Custom exception class
@@ -117,46 +92,44 @@ class ApiException implements Exception {
 }
 ```
 
-### Flutter Build Configuration
+### Android Build Configuration
 
-**android/app/build.gradle:**
-```gradle
+**android/app/build.gradle.kts:**
+```kotlin
 android {
+    namespace = "com.qetarfein.app"
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = "com.qetarfein.app"
+        minSdk = 24
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+
+        // Multilocale support
+        resConfigs("ar", "en")
+    }
+
     buildTypes {
         debug {
-            buildConfigField "String", "FLAVOR", '"development"'
+            isMinifyEnabled = false
+            isDebuggable = true
+            versionNameSuffix = "-debug"
         }
+
         release {
-            buildConfigField "String", "FLAVOR", '"production"'
+            isMinifyEnabled = true
+            isDebuggable = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
-    flavorDimensions "environment"
-    productFlavors {
-        development {
-            dimension "environment"
-            applicationIdSuffix ".dev"
-            versionNameSuffix "-dev"
-            buildConfigField "String", "FLAVOR", '"development"'
-        }
-        staging {
-            dimension "environment"
-            applicationIdSuffix ".staging"
-            versionNameSuffix "-staging"
-            buildConfigField "String", "FLAVOR", '"staging"'
-        }
-        production {
-            dimension "environment"
-            buildConfigField "String", "FLAVOR", '"production"'
-        }
+    buildFeatures {
+        buildConfig = true
     }
 }
-```
-
-**iOS Configuration (ios/Flutter/Debug.xcconfig, Release.xcconfig):**
-```
-FLAVOR=development  // for Debug.xcconfig
-FLAVOR=production   // for Release.xcconfig
 ```
 
 ## Table of Contents
@@ -1564,7 +1537,7 @@ GET /badges/{id}
 
 ### Connection
 ```
-wss://ws.qatarfein.com/app/{app_key}
+wss://qetar.elbenaa.com/app/{app_key}
 ```
 
 **Authentication:**
@@ -1748,62 +1721,79 @@ events: ["message.posted", "message.verified"]
 
 ## Testing & Development
 
-### Environment URLs
-All URLs are automatically configured through the `ApiConfig` class:
-
-**Development Environment:**
-- **API**: `http://10.0.2.2:8000/api/v1` (Android) / `http://localhost:8000/api/v1` (iOS)
-- **WebSocket**: `ws://10.0.2.2:8080` (Android) / `ws://localhost:8080` (iOS)
-
-**Staging Environment:**
-- **API**: `https://staging-api.qatarfein.com/api/v1`
-- **WebSocket**: `wss://staging-ws.qatarfein.com`
+### Production URL
+The app is configured for production-only deployment:
 
 **Production Environment:**
-- **API**: `https://api.qatarfein.com/api/v1`
-- **WebSocket**: `wss://ws.qatarfein.com`
+- **API**: `https://qetar.elbenaa.com/api/v1`
+- **WebSocket**: `wss://qetar.elbenaa.com`
 
 ### Practical Implementation
 
-#### Main Entry Points
-Create separate main files for each environment:
-
-**lib/main_development.dart:**
+#### Main Entry Point
+**lib/main.dart:**
 ```dart
 import 'package:flutter/material.dart';
-import 'main.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'core/config/api_config.dart';
+import 'core/di/service_locator.dart';
+import 'core/navigation/app_router.dart';
+import 'core/theme/app_theme.dart';
+import 'features/auth/bloc/auth_bloc.dart';
+import 'features/auth/repositories/auth_repository.dart';
+import 'l10n/app_localizations.dart';
 
-void main() {
-  runApp(const QatarFeinApp(environment: AppEnvironment.development));
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize dependency injection
+  await setupServiceLocator();
+
+  runApp(const QetarFeinApp());
 }
-```
 
-**lib/main_staging.dart:**
-```dart
-import 'package:flutter/material.dart';
-import 'main.dart';
+class QetarFeinApp extends StatelessWidget {
+  const QetarFeinApp({super.key});
 
-void main() {
-  runApp(const QatarFeinApp(environment: AppEnvironment.staging));
-}
-```
+  @override
+  Widget build(BuildContext context) {
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(
+          create: (context) => AuthBloc(
+            repository: serviceLocator<AuthRepository>(),
+          )..add(AppStarted()),
+        ),
+      ],
+      child: MaterialApp.router(
+        title: ApiConfig.appName,
+        debugShowCheckedModeBanner: ApiConfig.enableDebugMode,
 
-**lib/main_production.dart:**
-```dart
-import 'package:flutter/material.dart';
-import 'main.dart';
+        // Localization
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('ar'), // Default to Arabic
 
-void main() {
-  runApp(const QatarFeinApp(environment: AppEnvironment.production));
+        // Theme
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.light,
+
+        // Routing
+        routerConfig: AppRouter.router,
+      ),
+    );
+  }
 }
 ```
 
 #### API Client Implementation
 ```dart
-// lib/services/api_client.dart
+// lib/core/services/api_client.dart
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
-import '../config/api_config.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:qetar_fein/core/config/api_config.dart';
+import '../errors/exceptions.dart';
 
 class ApiClient {
   static final ApiClient _instance = ApiClient._internal();
@@ -1811,29 +1801,32 @@ class ApiClient {
   ApiClient._internal();
 
   late final Dio _dio;
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
-  void initialize() {
-    _dio = Dio();
-    _dio.options.baseUrl = ApiConfig.baseUrl;
-    _dio.options.connectTimeout = const Duration(seconds: 30);
-    _dio.options.receiveTimeout = const Duration(seconds: 30);
-    _dio.options.headers = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-      'Accept-Language': 'ar', // Default to Arabic
-    };
+  String? _accessToken;
+  bool _isInitialized = false;
+
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    _dio = Dio(BaseOptions(
+      baseUrl: ApiConfig.baseUrl,
+      connectTimeout: const Duration(milliseconds: ApiConfig.connectTimeout),
+      receiveTimeout: const Duration(milliseconds: ApiConfig.receiveTimeout),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Accept-Language': 'ar', // Default to Arabic
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    ));
 
     // Add interceptors
     _dio.interceptors.add(_createAuthInterceptor());
+    _dio.interceptors.add(_createLoggingInterceptor());
+    _dio.interceptors.add(_createErrorInterceptor());
 
-    if (ApiConfig.isDevelopment) {
-      _dio.interceptors.add(LogInterceptor(
-        requestBody: true,
-        responseBody: true,
-        requestHeader: true,
-        responseHeader: false,
-      ));
-    }
+    _isInitialized = true;
   }
 
   InterceptorsWrapper _createAuthInterceptor() {
@@ -1914,10 +1907,11 @@ class TrainRepository {
 
 #### WebSocket Service Implementation
 ```dart
-// lib/services/websocket_service.dart
+// lib/core/services/websocket_service.dart
 import 'dart:convert';
+import 'package:qetar_fein/core/config/api_config.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import '../config/api_config.dart';
+import '../utils/logger.dart';
 
 class WebSocketService {
   static final WebSocketService _instance = WebSocketService._internal();
@@ -1938,11 +1932,9 @@ class WebSocketService {
         onDone: _handleDisconnection,
       );
 
-      if (ApiConfig.isDevelopment) {
-        print('WebSocket connected to: $wsUrl');
-      }
+      AppLogger.i('WebSocket connected to: $wsUrl');
     } catch (e) {
-      print('WebSocket connection error: $e');
+      AppLogger.e('WebSocket connection error: $e');
     }
   }
 
@@ -2001,80 +1993,104 @@ class WebSocketService {
 }
 ```
 
-#### Environment-Specific App Configuration
-```dart
-// lib/main.dart
-import 'package:flutter/material.dart';
-import 'config/api_config.dart';
-import 'services/api_client.dart';
-
-class QatarFeinApp extends StatelessWidget {
-  final AppEnvironment environment;
-
-  const QatarFeinApp({
-    Key? key,
-    required this.environment,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    // Initialize environment
-    Environment.initialize(environment);
-
-    // Initialize API client
-    ApiClient().initialize();
-
-    return MaterialApp(
-      title: 'Qatar Fein${ApiConfig.isDevelopment ? ' (Dev)' : ''}',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        // Add debug banner for non-production
-        debugShowCheckedModeBanner: ApiConfig.isDevelopment,
-      ),
-      home: const SplashScreen(),
-    );
-  }
-}
-```
-
 ### Test Credentials
-- **Phone**: +974123456789
-- **OTP**: 123456 (development only)
-- **Admin Login**: admin@qatarfein.com / password123
+- **Phone**: 01011761786 (Egyptian format)
+- **Password**: password123
+- **Admin Login**: admin@qetarfein.com / password123
 
 ### Build Commands
 ```bash
-# Development build
-flutter run --flavor development -t lib/main_development.dart
+# Debug build
+flutter run
 
-# Staging build
-flutter run --flavor staging -t lib/main_staging.dart
-
-# Production build
-flutter build apk --flavor production -t lib/main_production.dart
-flutter build ios --flavor production -t lib/main_production.dart
+# Release build
+flutter build apk --release
+flutter build appbundle --release
+flutter build ios --release
 ```
 
-### Network Security Configuration (Android)
-For development HTTP connections, add to `android/app/src/main/res/xml/network_security_config.xml`:
+### Package Configuration
+**pubspec.yaml:**
+```yaml
+name: qetar_fein
+description: Egyptian National Railways tracking app
+version: 1.0.0+1
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">10.0.2.2</domain>
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-    </domain-config>
-</network-security-config>
-```
+environment:
+  sdk: '>=3.0.0 <4.0.0'
 
-And reference it in `android/app/src/main/AndroidManifest.xml`:
-```xml
-<application
-    android:networkSecurityConfig="@xml/network_security_config">
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+
+  # Networking
+  dio: ^5.4.0
+  web_socket_channel: ^2.4.3
+
+  # Storage
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.3
+
+  # Navigation
+  go_router: ^12.1.3
+
+  # Localization
+  intl: ^0.18.1
+
+  # UI
+  cached_network_image: ^3.4.0
+  pinput: ^4.0.0
+
+  # Location
+  geolocator: ^10.1.1
+  google_maps_flutter: ^2.5.3
+
+  # Firebase
+  firebase_core: ^2.27.0
+  firebase_messaging: ^14.7.19
+  flutter_local_notifications: ^17.2.4
+
+  # Utilities
+  logger: ^2.6.1
+  get_it: ^7.7.0
+  json_annotation: ^4.8.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  build_runner: ^2.4.13
+  json_serializable: ^6.8.0
+  flutter_lints: ^5.0.0
 ```
 
 ---
 
-This API contract provides complete specifications for building the Qatar Fein mobile application with proper integration to the Laravel backend following Egyptian National Railways business rules.
+This API contract provides complete specifications for building the Qetar Fein mobile application with proper integration to the Laravel backend following Egyptian National Railways business rules.
+
+## Summary of Changes
+
+### Simplified Architecture
+- **Single Environment**: Production-only configuration, no dev/staging environments
+- **Base URL**: `https://qetar.elbenaa.com/api/v1`
+- **WebSocket**: `wss://qetar.elbenaa.com`
+- **Package Name**: `com.qetarfein.app`
+- **App Name**: Qetar Fein (Egyptian Railways)
+
+### Configuration Highlights
+- All environment switching removed
+- Simplified API config with const values
+- No build flavors or environment-specific files
+- Direct production deployment focus
+- Egyptian phone number format (11 digits: 010/011/012/015)
+
+### Key Features
+- **Authentication**: Laravel Sanctum Bearer tokens
+- **Primary Language**: Arabic (ar) with English (en) support
+- **Real-time**: WebSocket support for live train tracking
+- **Rewards**: Points system for completed assignments
+- **Community**: Trip-based chat and status updates
+- **Location**: GPS tracking for active assignments
