@@ -13,8 +13,7 @@ return new class extends Migration
     {
         Schema::table('users', function (Blueprint $table) {
             $table->text('fcm_token')->nullable()->after('remember_token');
-            $table->json('notification_preferences')->nullable()->after('fcm_token');
-            $table->timestamp('fcm_token_updated_at')->nullable()->after('notification_preferences');
+            $table->timestamp('fcm_token_updated_at')->nullable()->after('fcm_token');
         });
     }
 
@@ -24,7 +23,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn(['fcm_token', 'notification_preferences', 'fcm_token_updated_at']);
+            $table->dropColumn(['fcm_token', 'fcm_token_updated_at']);
         });
     }
 };
