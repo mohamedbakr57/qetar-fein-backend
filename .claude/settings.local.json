@@ -17,7 +17,11 @@
       "Read(//c/Users/Moham/Downloads/**)",
       "Bash(rm:*)",
       "Bash(find:*)",
-      "Read(//d/Main Projects/Backend/app/Traits/**)"
+      "Read(//d/Main Projects/Backend/app/Traits/**)",
+      "Bash(claude update:*)",
+      "Read(//d/Main Projects/qetar-fein-platform/**)",
+      "Bash(dir:*)",
+      "Bash(flutter pub get:*)"
     ],
     "deny": [],
     "ask": []

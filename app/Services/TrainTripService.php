@@ -95,7 +95,7 @@ class TrainTripService
         ?int $currentStationId = null,
         ?int $nextStationId = null
     ): TrainTrip {
-        $trip = TrainTrip::findOrFail($tripId);
+        $trip = TrainTrip::with('train')->findOrFail($tripId);
 
         $trip->update([
             'current_latitude' => $latitude,
@@ -106,7 +106,19 @@ class TrainTripService
             'last_location_update' => now(),
         ]);
 
-        return $trip->fresh();
+        $trip->refresh();
+
+        // Broadcast location update
+        $location = [
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'speed_kmh' => $speed,
+            'heading' => null,
+            'accuracy' => null,
+        ];
+        broadcast(new \App\Events\TrainLocationUpdated($trip->train, $location, $trip->delay_minutes));
+
+        return $trip;
     }
 
     /**
@@ -114,14 +126,20 @@ class TrainTripService
      */
     public function startTrip(int $tripId): TrainTrip
     {
-        $trip = TrainTrip::findOrFail($tripId);
+        $trip = TrainTrip::with('train')->findOrFail($tripId);
+        $previousStatus = $trip->status;
 
         $trip->update([
             'status' => 'departed',
             'actual_departure_time' => now(),
         ]);
 
-        return $trip->fresh();
+        $trip->refresh();
+
+        // Broadcast status change
+        broadcast(new \App\Events\TripStatusUpdated($trip, $previousStatus, 'departed'));
+
+        return $trip;
     }
 
     /**
@@ -129,7 +147,9 @@ class TrainTripService
      */
     public function completeTrip(int $tripId): TrainTrip
     {
-        $trip = TrainTrip::findOrFail($tripId);
+        $trip = TrainTrip::with('train')->findOrFail($tripId);
+        $previousStatus = $trip->status;
+        $previousDelay = $trip->delay_minutes;
 
         $trip->update([
             'status' => 'arrived',
@@ -142,7 +162,63 @@ class TrainTripService
             $trip->update(['delay_minutes' => max(0, $delayMinutes)]);
         }
 
-        return $trip->fresh();
+        $trip->refresh();
+
+        // Broadcast status change
+        broadcast(new \App\Events\TripStatusUpdated($trip, $previousStatus, 'arrived'));
+
+        // Broadcast delay update if changed
+        if ($trip->delay_minutes !== $previousDelay) {
+            broadcast(new \App\Events\TrainDelayUpdated($trip, $previousDelay, $trip->delay_minutes));
+        }
+
+        return $trip;
+    }
+
+    /**
+     * Update trip delay and broadcast
+     */
+    public function updateTripDelay(int $tripId, int $delayMinutes): TrainTrip
+    {
+        $trip = TrainTrip::with('train')->findOrFail($tripId);
+        $previousDelay = $trip->delay_minutes;
+
+        // Update delay
+        $trip->update(['delay_minutes' => $delayMinutes]);
+        $trip->refresh();
+
+        // Update status based on delay
+        if ($delayMinutes > 0 && $trip->status === 'departed') {
+            $previousStatus = $trip->status;
+            $trip->update(['status' => 'delayed']);
+            broadcast(new \App\Events\TripStatusUpdated($trip, $previousStatus, 'delayed'));
+        }
+
+        // Broadcast delay update
+        if ($delayMinutes !== $previousDelay) {
+            broadcast(new \App\Events\TrainDelayUpdated($trip, $previousDelay, $delayMinutes));
+        }
+
+        return $trip;
+    }
+
+    /**
+     * Update trip status and broadcast
+     */
+    public function updateTripStatus(int $tripId, string $newStatus): TrainTrip
+    {
+        $trip = TrainTrip::with('train')->findOrFail($tripId);
+        $previousStatus = $trip->status;
+
+        $trip->update(['status' => $newStatus]);
+        $trip->refresh();
+
+        // Broadcast status update
+        if ($newStatus !== $previousStatus) {
+            broadcast(new \App\Events\TripStatusUpdated($trip, $previousStatus, $newStatus));
+        }
+
+        return $trip;
     }
 
     /**

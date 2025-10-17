@@ -165,8 +165,8 @@ class AssignmentController extends Controller
             'last_location_update' => now(),
         ]);
 
-        // Broadcast location update (implement in real-time service)
-        // event(new PassengerLocationUpdated($assignment));
+        // Broadcast location update for real-time tracking
+        broadcast(new \App\Events\PassengerLocationUpdated($assignment))->toOthers();
 
         return $this->apiResponse([
             'assignment_id' => $assignment->id,
@@ -273,5 +273,119 @@ class AssignmentController extends Controller
         }
 
         return $this->apiResponse(['assignment' => $assignment]);
+    }
+
+    /**
+     * Get trip progress for an assignment
+     */
+    public function tripProgress(int $id, Request $request): JsonResponse
+    {
+        $assignment = PassengerAssignment::with([
+            'trip.train.stops.station',
+            'boardingStation',
+            'destinationStation'
+        ])
+            ->where('id', $id)
+            ->where('user_id', auth()->id())
+            ->first();
+
+        if (!$assignment) {
+            return $this->errorResponse('Assignment not found', 404);
+        }
+
+        $trip = $assignment->trip;
+        $train = $trip->train;
+
+        // Get all stops for this train
+        $allStops = $train->stops->sortBy('stop_number');
+
+        // Find boarding and destination stops
+        $boardingStop = $allStops->firstWhere('station_id', $assignment->boarding_station_id);
+        $destinationStop = $allStops->firstWhere('station_id', $assignment->destination_station_id);
+
+        if (!$boardingStop || !$destinationStop) {
+            return $this->errorResponse('Invalid assignment stations', 400);
+        }
+
+        // Get stops between boarding and destination
+        $relevantStops = $allStops->filter(function ($stop) use ($boardingStop, $destinationStop) {
+            return $stop->stop_number >= $boardingStop->stop_number &&
+                   $stop->stop_number <= $destinationStop->stop_number;
+        });
+
+        // Calculate progress
+        $totalStops = $relevantStops->count();
+        $currentStationId = $trip->current_station_id;
+
+        $passedStops = 0;
+        if ($currentStationId) {
+            $currentStop = $allStops->firstWhere('station_id', $currentStationId);
+            if ($currentStop) {
+                $passedStops = $relevantStops->filter(function ($stop) use ($currentStop) {
+                    return $stop->stop_number < $currentStop->stop_number;
+                })->count();
+            }
+        }
+
+        $progressPercentage = $totalStops > 0 ? round(($passedStops / $totalStops) * 100, 1) : 0;
+
+        // Calculate estimated time remaining
+        $currentTime = now();
+        $estimatedArrival = null;
+        $timeRemaining = null;
+
+        if ($destinationStop->arrival_time) {
+            $arrivalDateTime = Carbon::parse($trip->trip_date->format('Y-m-d') . ' ' . $destinationStop->arrival_time);
+
+            // Add delay
+            if ($trip->delay_minutes > 0) {
+                $arrivalDateTime->addMinutes($trip->delay_minutes);
+            }
+
+            $estimatedArrival = $arrivalDateTime;
+            $timeRemaining = $currentTime->lt($arrivalDateTime) ? $currentTime->diffInMinutes($arrivalDateTime) : 0;
+        }
+
+        return $this->apiResponse([
+            'assignment_id' => $assignment->id,
+            'trip_id' => $trip->id,
+            'progress' => [
+                'percentage' => $progressPercentage,
+                'stops_passed' => $passedStops,
+                'total_stops' => $totalStops,
+                'stops_remaining' => $totalStops - $passedStops,
+            ],
+            'timing' => [
+                'estimated_arrival' => $estimatedArrival?->toISOString(),
+                'time_remaining_minutes' => $timeRemaining,
+                'delay_minutes' => $trip->delay_minutes,
+                'status' => $trip->status,
+            ],
+            'current_location' => [
+                'station_id' => $currentStationId,
+                'station' => $currentStationId ? Station::find($currentStationId) : null,
+                'next_station_id' => $trip->next_station_id,
+                'next_station' => $trip->next_station_id ? Station::find($trip->next_station_id) : null,
+            ],
+            'route' => $relevantStops->map(function ($stop) use ($currentStationId) {
+                return [
+                    'stop_number' => $stop->stop_number,
+                    'station' => $stop->station,
+                    'arrival_time' => $stop->arrival_time,
+                    'departure_time' => $stop->departure_time,
+                    'is_current' => $stop->station_id === $currentStationId,
+                    'is_passed' => $currentStationId && $stop->stop_number < $this->getStopNumber($currentStationId, $allStops),
+                ];
+            })->values(),
+        ]);
+    }
+
+    /**
+     * Helper to get stop number for a station
+     */
+    private function getStopNumber($stationId, $stops)
+    {
+        $stop = $stops->firstWhere('station_id', $stationId);
+        return $stop ? $stop->stop_number : 0;
     }
 }

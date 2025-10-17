@@ -249,6 +249,38 @@ class StationController extends Controller
     }
 
     /**
+     * Get popular stations (most used)
+     */
+    public function popular(Request $request): JsonResponse
+    {
+        $limit = $request->get('limit', 10);
+
+        // Get most used boarding stations from passenger assignments
+        $popularStations = \App\Models\PassengerAssignment::selectRaw('boarding_station_id as station_id, COUNT(*) as usage_count')
+            ->groupBy('boarding_station_id')
+            ->orderByDesc('usage_count')
+            ->limit($limit)
+            ->get();
+
+        $stations = [];
+        foreach ($popularStations as $item) {
+            $station = Station::find($item->station_id);
+            if ($station) {
+                $stations[] = [
+                    'station' => $station,
+                    'usage_count' => $item->usage_count,
+                    'trains_count' => Stop::where('station_id', $station->id)->distinct('train_id')->count(),
+                ];
+            }
+        }
+
+        return $this->apiResponse([
+            'popular_stations' => $stations,
+            'count' => count($stations)
+        ]);
+    }
+
+    /**
      * Helper method to get station/train name based on available format
      */
     private function getStationName($entity): string

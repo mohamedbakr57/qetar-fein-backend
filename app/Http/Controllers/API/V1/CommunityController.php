@@ -224,6 +224,9 @@ class CommunityController extends Controller
             'is_verified' => $confirmations >= 3 && $confirmations > $disputes,
         ]);
 
+        // Broadcast verification update
+        broadcast(new \App\Events\MessageVerificationUpdated($message, $confirmations, $disputes))->toOthers();
+
         return $this->apiResponse([
             'message_id' => $message->id,
             'verification_count' => $message->verification_count,
