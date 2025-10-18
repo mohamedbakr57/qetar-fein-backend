@@ -49,10 +49,6 @@ class Train extends Model
         return $this->hasMany(\App\Models\Train\NoStop::class);
     }
 
-    public function trips()
-    {
-        return $this->hasMany(TrainTrip::class);
-    }
 
     // Scopes
     public function scopeActive($query)

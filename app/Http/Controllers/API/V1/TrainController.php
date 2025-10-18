@@ -39,10 +39,40 @@ class TrainController extends Controller
             });
         }
 
-        $trains = $query->orderBy('number')->paginate(20);
+        $trains = $query->with(['trainType', 'stops.station'])->orderBy('number')->paginate(20);
+
+        // Format trains with journey information
+        $formattedTrains = collect($trains->items())->map(function($train) {
+            $trainData = $train->toArray();
+
+            // Add journey information
+            $journey = null;
+            if ($train->stops->isNotEmpty()) {
+                $firstStop = $train->stops->first();
+                $lastStop = $train->stops->last();
+
+                $journey = [
+                    'origin' => [
+                        'station_id' => $firstStop->station->id,
+                        'station_name' => $this->getStationName($firstStop->station),
+                        'departure_time' => $firstStop->departure_time
+                    ],
+                    'destination' => [
+                        'station_id' => $lastStop->station->id,
+                        'station_name' => $this->getStationName($lastStop->station),
+                        'arrival_time' => $lastStop->arrival_time
+                    ],
+                    'total_stops' => $train->stops->count(),
+                    'major_stops' => $train->stops->where('is_major_stop', true)->count()
+                ];
+            }
+
+            $trainData['journey'] = $journey;
+            return $trainData;
+        });
 
         return $this->apiResponse([
-            'trains' => $trains->items(),
+            'trains' => $formattedTrains,
             'pagination' => [
                 'current_page' => $trains->currentPage(),
                 'last_page' => $trains->lastPage(),
@@ -55,7 +85,6 @@ class TrainController extends Controller
     public function show(int $id): JsonResponse
     {
         $train = Train::with(['stops.station'])->find($id);
-
         if (!$train) {
             return $this->errorResponse('Train not found', 404);
         }
@@ -81,7 +110,6 @@ class TrainController extends Controller
                 'major_stops' => $train->stops->where('is_major_stop', true)->count()
             ];
         }
-
         return $this->apiResponse([
             'train' => $train,
             'journey' => $journey
