@@ -8,11 +8,8 @@ Route::prefix('v1')->group(function () {
 
     // Authentication Routes (Public)
     Route::prefix('auth')->group(function () {
+        Route::post('/register', [App\Http\Controllers\API\V1\AuthController::class, 'register']);
         Route::post('/login', [App\Http\Controllers\API\V1\AuthController::class, 'login']);
-        Route::post('/phone/send-otp', [App\Http\Controllers\API\V1\AuthController::class, 'sendOtp']);
-        Route::post('/phone/verify', [App\Http\Controllers\API\V1\AuthController::class, 'verifyOtp']);
-        Route::post('/register/complete', [App\Http\Controllers\API\V1\AuthController::class, 'completeRegistration']);
-        Route::post('/password/reset', [App\Http\Controllers\API\V1\AuthController::class, 'resetPassword']);
         Route::post('/social/{provider}', [App\Http\Controllers\API\V1\AuthController::class, 'socialLogin']);
     });
 
